@@ -9,12 +9,10 @@ import re
 # Initialise Text-To-Speech Engine
 engine=pyttsx3.init()
 
-def get_voice_input():
+def get_voice_input(duration=5,fs=44100):
     recognizer = sr.Recognizer()
-    fs = 44100  # Sample rate
-    duration = 5  # seconds
 
-    print("Speak Your Expense (recording for 5 seconds)")
+    print(f"Speak Your Expense (recording for {duration} seconds)")
     recording = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype="int16")
     sd.wait()
 
@@ -36,10 +34,10 @@ def get_voice_input():
     try:
         return recognizer.recognize_google(audio)
     except sr.UnknownValueError:
-        engine.say( "Sorry, could not understand the audio")
+        speak_output( "Sorry, could not understand the audio")
         return ""
     except sr.RequestError as e:
-        engine.say(f"Could not request results; {e}")
+        speak_output(f"Could not request results; {e}")
         return ""
 
 
@@ -55,6 +53,9 @@ def parse_expense(text):
     if match:
         category=match.group(1)
         
+    if not numbers:
+        return None, category
+        
     return amount, category
 
 
@@ -66,10 +67,15 @@ def speak_output(text):
     
     
 if __name__ == "__main__":
-    text = get_voice_input()
-    if text:
-        amount, category = parse_expense(text)
-        print(f"Amount: {amount}, Category: {category}")
-        speak_output(f"Noted: {amount} added to {category}")
-    else:
-        speak_output("Could not understand your input. Please try again.")
+    while True:
+        text = get_voice_input()
+        if "exit" in text.lower():
+            speak_output("Goodbye")
+            print("Goodbye")
+            break
+        if text:
+            amount, category = parse_expense(text)
+            print(f"Amount: {amount}, Category: {category}")
+            speak_output(f"Noted: {amount} added to {category}")
+        else:
+            speak_output("Could not understand your input. Please try again.")
