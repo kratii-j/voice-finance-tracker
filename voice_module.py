@@ -44,8 +44,8 @@ def add_expense_nlp(text):
     if any(w in text for w in keywords):
         amount_match = re.search(r'\d+', text)
         amount = int(amount_match.group()) if amount_match else 0
-        category_match = re.search(r'(?:to|on)\s+(\w+)', text)
-        category = category_match.group(1) if category_match else "uncategorized"
+        category_match = re.search(r'(?:to|on)\s+([\w\s]+)', text)        
+        category = category_match.group(1).strip() if category_match else "uncategorized"
         return amount, category
     return None, None
 

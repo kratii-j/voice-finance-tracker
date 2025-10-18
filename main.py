@@ -1,6 +1,6 @@
 # main.py
 
-from voice_module import get_voice_input, speak, add_expense_nlp
+from voice_module import get_voice_input, speak, parse_expense
 from database import (
     create_connection,
     create_table,
@@ -9,6 +9,20 @@ from database import (
     get_total_by_category,
 )
 import sys
+
+def show_help():
+    help_text = (
+        "You can say things like:\n"
+        "- 'Add 200 to food'\n"
+        "- 'Show my balance'\n"
+        "- 'Show recent expenses'\n"
+        "- 'Give me weekly summary'\n"
+        "- 'Delete last expense'\n"
+        "- 'Stop' or 'Exit' to quit"
+    )
+    print(help_text)
+    speak("Here are some things you can say: add expense, show balance, recent expenses, summary, or stop.")
+    return help_text
 
 
 def main():
@@ -22,56 +36,62 @@ def main():
     MAX_ATTEMPTS = 5
     attempts = 0
 
-    while attempts < MAX_ATTEMPTS:
-        user_text = get_voice_input(duration=5)
+    try:
+        while attempts < MAX_ATTEMPTS:
+            user_text = get_voice_input(duration=5)
 
-        if not user_text:
-            attempts += 1
-            print(f"No input detected. Attempt {attempts} of {MAX_ATTEMPTS}")
-            continue
+            if not user_text:
+                attempts += 1
+                print(f"No input detected. Attempt {attempts} of {MAX_ATTEMPTS}")
+                continue
 
-        attempts = 0
+            attempts = 0
 
-        # Exit commands
-        if any(cmd in user_text for cmd in ["stop", "exit", "quit"]):
-            speak("Stopping the expense tracker. Goodbye.")
-            print("Exiting...")
-            sys.exit(0)
+            cmd = parse_expense(user_text)
+            action = cmd.get("action", "unknown")
+            
+            if action == "exit":
+                speak("Goodbye! Closing the expense tracker")
+                print("Exiting...")
+                sys.exit(0)
+                
+            elif action == "add":
+                amount = cmd.get("amount")
+                category = cmd.get("category", "uncategorized")
+                # allow zero if you want; check for None specifically
+                if amount is not None:
+                    add_expense(amount, category)
+                    speak(f"Added {amount} rupees to {category}")
+                    print(f"Added ₹{amount} -> {category}")
+                else:
+                    speak("Sorry! I didn't catch the amount. Please speak again.")
+                continue
+                    
+            elif action == "balance":
+                total = get_total_today()
+                speak(f"Your total spendings today are {total}")
+                print(f"Today's total: {total}")
+                continue
+            
+            elif action == "help":
+                show_help()
+                continue
+            
+            else:
+                # unrecognized command: count attempt to avoid infinite loop
+                attempts += 1
+                speak("Command not recognized. Please say again")
+                print(f"User command: {user_text}. Attempt {attempts} of {MAX_ATTEMPTS}")
+                continue
 
-        # Add expense
-        amount, category = add_expense_nlp(user_text)
-        if amount:
-            add_expense(amount, category.lower())  # normalize category
-            speak(f"Added {amount} rupees to {category}")
-            print(f"Expense added: {amount} -> {category}")
-            continue
+        if attempts >= MAX_ATTEMPTS:
+            speak("No command received. Exiting the assistant.")
+            print("No input received. Exiting...")
 
-        # Show today's total
-        if "balance" in user_text or "today" in user_text:
-            total = get_total_today()
-            speak(f"Your total spending today is {total} rupees")
-            print(f"Today's total: {total}")
-            continue
-
-        # Show total by category
-        if "total on" in user_text or "spent on" in user_text:
-            words = user_text.split()
-            if "on" in words:
-                idx = words.index("on")
-                if idx + 1 < len(words):
-                    category = words[idx + 1].lower()
-                    total_cat = get_total_by_category(category)
-                    speak(f"You have spent {total_cat} rupees on {category}")
-                    print(f"Total on {category}: {total_cat}")
-                    continue
-
-        # Unknown command
-        speak("Command not recognized. Try again or say help.")
-        print("Unrecognized command.")
-
-    if attempts >= MAX_ATTEMPTS:
-        speak("No command received. Exiting the assistant.")
-        print("No input received. Exiting...")
+    except KeyboardInterrupt:
+        speak("Interrupted. Exiting the assistant.")
+        print("Interrupted by user. Exiting...")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
