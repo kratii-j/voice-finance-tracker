@@ -1,7 +1,9 @@
 SpeechRecognition==3.10.0
 pyttsx3==2.90
 sounddevice
-numpy
-scipy
-pandas
-sounddevice
+numpy>=1.23
+scipy>=1.9
+pandas>=1.5
+matplotlib>=3.6
+python-dotenv>=1.0.0    # optional: config from .env
+pytest>=7.0             # dev: unit tests

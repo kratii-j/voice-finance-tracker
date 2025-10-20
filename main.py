@@ -49,47 +49,62 @@ def main():
 
             cmd = parse_expense(user_text)
             action = cmd.get("action", "unknown")
-            
+
             if action == "exit":
                 speak("Goodbye! Closing the expense tracker")
                 print("Exiting...")
                 sys.exit(0)
-                
+
             elif action == "add":
                 amount = cmd.get("amount")
                 category = cmd.get("category", "uncategorized")
-                # allow zero if you want; check for None specifically
                 if amount is not None:
                     add_expense(amount, category)
-                    speak(f"Added {amount} rupees to {category}")
+                    speak(f"Added {amount} rupees to {category}", tone="success")
                     print(f"Added ₹{amount} -> {category}")
                 else:
-                    speak("Sorry! I didn't catch the amount. Please speak again.")
+                    speak("Sorry! I didn't catch the amount. Please speak again.", tone="error")
                 continue
-                    
+
             elif action == "balance":
                 total = get_total_today()
-                speak(f"Your total spendings today are {total}")
+                speak(f"Your total spendings today are {total}", tone="info")
                 print(f"Today's total: {total}")
                 continue
-            
+
+            elif action == "recent":
+                # placeholder: database function for recent not implemented; add when ready
+                speak("Showing recent transactions.", tone="info")
+                print("Show recent transactions (not yet implemented).")
+                continue
+
+            elif action == "weekly" or action == "monthly":
+                speak("Summary feature not implemented yet.", tone="summary")
+                print(f"Requested {action} summary (not implemented).")
+                continue
+
+            elif action == "delete":
+                # placeholder delete behavior
+                speak("Delete feature is not implemented yet.", tone="error")
+                print("Delete last expense (not implemented).")
+                continue
+
             elif action == "help":
                 show_help()
                 continue
-            
+
             else:
-                # unrecognized command: count attempt to avoid infinite loop
                 attempts += 1
-                speak("Command not recognized. Please say again")
+                speak("Command not recognized. Please say again", tone="error")
                 print(f"User command: {user_text}. Attempt {attempts} of {MAX_ATTEMPTS}")
                 continue
 
         if attempts >= MAX_ATTEMPTS:
-            speak("No command received. Exiting the assistant.")
+            speak("No command received. Exiting the assistant.", tone="error")
             print("No input received. Exiting...")
 
     except KeyboardInterrupt:
-        speak("Interrupted. Exiting the assistant.")
+        speak("Interrupted. Exiting the assistant.", tone="error")
         print("Interrupted by user. Exiting...")
         sys.exit(0)
 
