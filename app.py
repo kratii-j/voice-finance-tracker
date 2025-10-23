@@ -4,7 +4,6 @@ import os
 
 app = Flask(__name__)
 
-# Route to serve chart images
 @app.route("/charts/<path:filename>")
 def serve_chart_file(filename):
     charts_dir = os.path.join(app.root_path, "static", "charts")
@@ -13,7 +12,6 @@ def serve_chart_file(filename):
 
 @app.route("/")
 def home():
-    # Generate weekly and monthly summaries and chart paths
     weekly_text, weekly_chart = generate_weekly_summary()
     monthly_text, monthly_chart, timeseries_chart = generate_monthly_summary()
 
@@ -23,7 +21,6 @@ def home():
         "timeseries": os.path.basename(timeseries_chart) if timeseries_chart else None,
     }
 
-    # Example total expense (you could calculate sum from DB instead)
     total = 0
 
     return render_template(
