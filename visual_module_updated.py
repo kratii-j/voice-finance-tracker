@@ -80,8 +80,6 @@ def get_monthly_summary_text() -> str:
     return "\n".join(lines)
 
 
-# --- chart generators ----------------------------------------------------
-
 def _save_figure(fig, path: str) -> str:
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
@@ -151,8 +149,6 @@ def generate_time_series_chart(days: int = 30) -> Optional[str]:
     return _save_figure(fig, out_path)
 
 
-# --- convenience function for frontend/main integration ------------------
-
 def generate_all_charts() -> dict:
     """Generate weekly, monthly and 30-day time-series charts. Return dict of {name: path}.
     If a chart couldn't be generated (no data), value will be None.
@@ -174,8 +170,6 @@ def ensure_chart_dir() -> None:
     os.makedirs(CHART_DIR, exist_ok=True)
 
 
-# --- quick CLI helper ----------------------------------------------------
-
 if __name__ == "__main__":
     print("visual_module_updated — generate charts and text summaries")
     ensure_chart_dir()
@@ -192,3 +186,102 @@ if __name__ == "__main__":
     ts = generate_time_series_chart(30)
     if ts:
         print(f"Saved time-series chart: {ts}")
+
+import sqlite3, datetime, matplotlib.pyplot as plt, os
+
+DB_NAME = "expenses.db"
+
+def generate_weekly_summary():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    today = datetime.date.today()
+    week_start = today - datetime.timedelta(days=7)
+    cursor.execute(
+        "SELECT category, SUM(amount) FROM expenses WHERE date >= ? GROUP BY category",
+        (week_start.isoformat(),),
+    )
+    data = cursor.fetchall()
+    conn.close()
+
+    if not data:
+        return ("No data for this week", None)
+
+    categories = [d[0] for d in data]
+    totals = [d[1] for d in data]
+
+    os.makedirs("static/charts", exist_ok=True)
+    chart_path = os.path.join("static", "charts", "weekly_category_pie.png")
+
+    plt.figure(figsize=(6, 5))
+    plt.pie(totals, labels=categories, autopct="%1.1f%%", startangle=140)
+    plt.title(f"Weekly Spending ({week_start} to {today})")
+    plt.tight_layout()
+    plt.savefig(chart_path)
+    plt.close()
+
+    text_summary = (
+        f"Weekly Summary ({week_start} to {today}):\n"
+        + "\n".join([f" - {cat}: ₹{amt:.2f}" for cat, amt in data])
+    )
+
+    return text_summary, chart_path
+
+
+def generate_monthly_summary():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    today = datetime.date.today()
+    month_start = today.replace(day=1)
+    cursor.execute(
+        "SELECT category, SUM(amount) FROM expenses WHERE date >= ? GROUP BY category",
+        (month_start.isoformat(),),
+    )
+    data = cursor.fetchall()
+    conn.close()
+
+    if not data:
+        return ("No data for this month", None, None)
+
+    categories = [d[0] for d in data]
+    totals = [d[1] for d in data]
+
+    os.makedirs("static/charts", exist_ok=True)
+    monthly_chart = os.path.join("static", "charts", "monthly_category_pie.png")
+    plt.figure(figsize=(6, 5))
+    plt.pie(totals, labels=categories, autopct="%1.1f%%", startangle=140)
+    plt.title(f"Monthly Spending ({today.strftime('%B %Y')})")
+    plt.tight_layout()
+    plt.savefig(monthly_chart)
+    plt.close()
+
+    # time series chart for last 30 days
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    thirty_days_ago = today - datetime.timedelta(days=30)
+    cursor.execute(
+        "SELECT date, SUM(amount) FROM expenses WHERE date >= ? GROUP BY date ORDER BY date",
+        (thirty_days_ago.isoformat(),),
+    )
+    time_data = cursor.fetchall()
+    conn.close()
+
+    timeseries_chart = os.path.join("static", "charts", "timeseries_30d.png")
+    if time_data:
+        dates = [datetime.datetime.strptime(d[0], "%Y-%m-%d") for d in time_data]
+        amounts = [d[1] for d in time_data]
+        plt.figure(figsize=(8, 4))
+        plt.plot(dates, amounts, marker="o", color="teal")
+        plt.title("Spending in Last 30 Days")
+        plt.xlabel("Date")
+        plt.ylabel("Amount (₹)")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(timeseries_chart)
+        plt.close()
+
+    text_summary = (
+        f"Monthly Summary ({today.strftime('%B %Y')}):\n"
+        + "\n".join([f" - {cat}: ₹{amt:.2f}" for cat, amt in data])
+    )
+
+    return text_summary, monthly_chart, timeseries_chart

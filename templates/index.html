@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row mb-4">
+  <div class="col-md-4">
+    <div class="card p-3">
+      <h5>Total expenses</h5>
+      <h2>₹{{ total | default('0') }}</h2>
+      <p class="text-muted">This month</p>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card p-3">
+      <h5>Category breakdown (pie)</h5>
+      {% if charts.monthly_category %}
+        <img src="{{ url_for('serve_chart_file', filename=charts.monthly_category) }}" class="img-fluid" alt="Monthly pie">
+      {% else %}
+        <p class="text-muted">No chart available.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card p-3">
+      <h5>Weekly summary</h5>
+      <pre>{{ weekly_text }}</pre>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card p-3">
+      <h5>Monthly summary</h5>
+      <pre>{{ monthly_text }}</pre>
+    </div>
+  </div>
+</div>
+{% endblock %}
