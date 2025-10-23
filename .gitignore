@@ -1,0 +1,10 @@
+# Python Caching
+__pycache__/
+*.pyc
+
+# Database and Environment
+expenses.db
+venv/
+
+# Generated Charts/Images
+static/charts/*.png
