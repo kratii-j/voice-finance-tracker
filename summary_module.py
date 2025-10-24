@@ -143,3 +143,33 @@ if __name__ == "__main__":
     print("\n📈 Generating charts...")
     generate_summary_chart("weekly")
     generate_summary_chart("monthly")
+
+import sqlite3
+import datetime
+
+DB_NAME = "expenses.db"
+
+def add_expense_to_db(category, amount, date=None):
+    """Add a new expense to the database."""
+    if date is None:
+        date = datetime.date.today().isoformat()
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO expenses (category, amount, date) VALUES (?, ?, ?)",
+        (category, float(amount), date)
+    )
+    conn.commit()
+    conn.close()
+
+def get_recent_transactions(limit=10):
+    """Return the most recent transactions as a list of dicts."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT date, category, amount FROM expenses ORDER BY date DESC, rowid DESC LIMIT ?",
+        (limit,)
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [{"date": r[0], "category": r[1], "amount": r[2]} for r in rows]
