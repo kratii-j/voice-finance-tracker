@@ -1,0 +1,12 @@
+2025-10-25 03:19:47 | INFO | Expense added successfully
+2025-10-25 03:19:47 | ERROR | Failed to read DB
+2025-10-25 03:26:17 | INFO | weekly_category chart generated at static\charts\weekly_category_pie.png
+2025-10-25 03:26:17 | INFO | monthly_category chart generated at static\charts\monthly_category_pie.png
+2025-10-25 03:26:17 | INFO | timeseries_30d chart generated at static\charts\timeseries_30d.png
+2025-10-25 03:31:24,147 | INFO | Expense added: ₹250 to food
+2025-10-25 03:31:34,140 | ERROR | Failed to read DB
+2025-10-25 03:39:31,094 | INFO | Expense added: ₹250 to food
+2025-10-25 03:39:31,105 | INFO | Expense added: ₹100 to transport
+2025-10-25 03:39:31,800 | INFO | weekly_category chart generated at static\charts\weekly_category_pie.png
+2025-10-25 03:39:31,800 | INFO | monthly_category chart generated at static\charts\monthly_category_pie.png
+2025-10-25 03:39:31,800 | INFO | timeseries_30d chart generated at static\charts\timeseries_30d.png

@@ -1,0 +1,17 @@
+import os
+from datetime import datetime
+
+DB_NAME = "expenses.db"
+LOG_DIR = "logs"
+CHART_DIR = os.path.join("static", "charts")
+
+LOG_FILE = os.path.join(LOG_DIR, "app.log")
+
+DATE_FORMAT = "%Y-%m-%d"
+
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(CHART_DIR, exist_ok=True)
+
+def timestamp():
+    """Return current timestamp string."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
