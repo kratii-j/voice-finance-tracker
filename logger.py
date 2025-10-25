@@ -1,41 +1,41 @@
 import logging
-import sys
-from config import LOG_FILE
+from typing import Any
+from config import LOG_FILE, LOG_DIR
 
 class Utf8StreamHandler(logging.StreamHandler):
-    def __init__(self, stream=None):
-        super().__init__(stream)
-        if stream is None:
-            stream = sys.stdout
-        self.stream = stream
-
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
-            self.stream.write(msg + self.terminator)
+            stream = self.stream
+            stream.write(msg + self.terminator)
             self.flush()
         except UnicodeEncodeError:
-            msg = self.format(record).encode(self.stream.encoding, errors='replace').decode(self.stream.encoding)
-            self.stream.write(msg + self.terminator)
+            msg = msg.encode("utf-8", errors="replace").decode("utf-8")
+            stream = self.stream
+            stream.write(msg + self.terminator)
             self.flush()
 
 logger = logging.getLogger("voice_finance_tracker")
 logger.setLevel(logging.INFO)
 
-formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
 file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
 
-console_handler = Utf8StreamHandler()
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
+stream_handler = Utf8StreamHandler()
+stream_handler.setFormatter(formatter)
 
+# avoid duplicate handlers on reload
+if not logger.handlers:
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
 
-def log_info(msg):
-    logger.info(msg)
+def log_info(message: str, *args: Any, **kwargs: Any) -> None:
+    logger.info(message, *args, **kwargs)
 
-
-def log_error(msg):
-    logger.error(msg)
+def log_error(message: str, *args: Any, **kwargs: Any) -> None:
+    logger.error(message, *args, **kwargs)

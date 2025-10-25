@@ -10,3 +10,10 @@
 2025-10-25 03:39:31,800 | INFO | weekly_category chart generated at static\charts\weekly_category_pie.png
 2025-10-25 03:39:31,800 | INFO | monthly_category chart generated at static\charts\monthly_category_pie.png
 2025-10-25 03:39:31,800 | INFO | timeseries_30d chart generated at static\charts\timeseries_30d.png
+2025-10-25 09:55:00 [INFO] voice_finance_tracker: Database schema ensured.
+2025-10-25 09:55:45 [INFO] voice_finance_tracker: Inserted expense 1 -> {'amount': 200, 'category': 'savings', 'description': None, 'payment_method': None, 'date': '2025-10-25', 'time': '09:55:45'}
+2025-10-25 09:55:58 [INFO] voice_finance_tracker: Inserted expense 2 -> {'amount': 600, 'category': 'entertainment', 'description': None, 'payment_method': None, 'date': '2025-10-25', 'time': '09:55:58'}
+2025-10-25 09:56:12 [INFO] voice_finance_tracker: Inserted expense 3 -> {'amount': 402, 'category': 'uncategorized', 'description': None, 'payment_method': None, 'date': '2025-10-25', 'time': '09:56:12'}
+2025-10-25 09:56:24 [INFO] voice_finance_tracker: Inserted expense 4 -> {'amount': 400, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-10-25', 'time': '09:56:24'}
+2025-10-25 09:57:34 [INFO] voice_finance_tracker: Inserted expense 5 -> {'amount': 100.0, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-10-25', 'time': '09:57:34'}
+2025-10-25 09:57:35 [INFO] voice_finance_tracker: Expense added via API (id=5)

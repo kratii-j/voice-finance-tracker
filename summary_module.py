@@ -1,175 +1,97 @@
 import sqlite3
-import datetime
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
-DB_NAME = "expenses.db"
+from config import DB_NAME, DATE_FORMAT
+from logger import log_error
 
-def get_connection():
-    return sqlite3.connect(DB_NAME)
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def get_total_expenses():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT SUM(amount) FROM expenses")
-    total = cur.fetchone()[0]
-    conn.close()
-    return total if total else 0
+def _fetch_single(query: str, params: Tuple = ()) -> float:
+    try:
+        with get_connection() as conn:
+            cur = conn.execute(query, params)
+            result = cur.fetchone()
+            return float(result[0] or 0.0)
+    except sqlite3.Error as exc:
+        log_error("Summary fetch error: %s", exc)
+        raise
 
-def get_monthly_total(year=None, month=None):
-    if year is None or month is None:
-        today = datetime.date.today()
-        year, month = today.year, today.month
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT SUM(amount) FROM expenses WHERE strftime('%Y', date)=? AND strftime('%m', date)=?", 
-                (str(year), f"{month:02d}"))
-    total = cur.fetchone()[0]
-    conn.close()
-    return total if total else 0
+def get_total_expenses() -> float:
+    return _fetch_single("SELECT COALESCE(SUM(amount), 0) FROM expenses")
 
-def get_expenses_by_category():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT category, SUM(amount) FROM expenses GROUP BY category")
-    data = cur.fetchall()
-    conn.close()
-    return data
-
-def get_daily_average():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT date, SUM(amount) FROM expenses GROUP BY date")
-    results = cur.fetchall()
-    conn.close()
-    if not results:
-        return 0
-    total_spent = sum(amount for _, amount in results)
-    return total_spent / len(results)
-import os
-import matplotlib.pyplot as plt
-
-def get_weekly_summary_text():
-    """Generate a weekly expense summary (last 7 days)."""
-    conn = get_connection()
-    cur = conn.cursor()
-    today = datetime.date.today()
-    week_ago = today - datetime.timedelta(days=7)
-    cur.execute("SELECT category, SUM(amount) FROM expenses WHERE date BETWEEN ? AND ? GROUP BY category",
-                (week_ago.isoformat(), today.isoformat()))
-    data = cur.fetchall()
-    conn.close()
-
-    if not data:
-        return "No expenses recorded this week."
-
-    text_summary = "Weekly Summary (last 7 days):\n"
-    total = 0
-    for category, amount in data:
-        text_summary += f"  {category}: ₹{amount:.2f}\n"
-        total += amount
-    text_summary += f"Total Spent This Week: ₹{total:.2f}"
-    return text_summary
-
-
-def get_monthly_summary_text():
-    """Generate a monthly expense summary (current month)."""
-    today = datetime.date.today()
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT category, SUM(amount) FROM expenses WHERE strftime('%Y-%m', date)=? GROUP BY category",
-                (f"{today.year}-{today.month:02d}",))
-    data = cur.fetchall()
-    conn.close()
-
-    if not data:
-        return "No expenses recorded this month."
-
-    text_summary = f"Monthly Summary ({today.strftime('%B %Y')}):\n"
-    total = 0
-    for category, amount in data:
-        text_summary += f"  {category}: ₹{amount:.2f}\n"
-        total += amount
-    text_summary += f"Total Spent This Month: ₹{total:.2f}"
-    return text_summary
-
-
-def generate_summary_chart(period="weekly"):
-    """Generate a pie chart summary for weekly or monthly expenses."""
-    os.makedirs("static/charts", exist_ok=True)
-    conn = get_connection()
-    cur = conn.cursor()
-    today = datetime.date.today()
-
-    if period == "weekly":
-        week_ago = today - datetime.timedelta(days=7)
-        cur.execute("SELECT category, SUM(amount) FROM expenses WHERE date BETWEEN ? AND ? GROUP BY category",
-                    (week_ago.isoformat(), today.isoformat()))
-        chart_path = "static/charts/weekly_summary_chart.png"
+def get_monthly_total(year: Optional[int] = None, month: Optional[int] = None) -> float:
+    now = datetime.now()
+    year = year or now.year
+    month = month or now.month
+    start = datetime(year, month, 1)
+    if month == 12:
+        end = datetime(year + 1, 1, 1)
     else:
-        cur.execute("SELECT category, SUM(amount) FROM expenses WHERE strftime('%Y-%m', date)=? GROUP BY category",
-                    (f"{today.year}-{today.month:02d}",))
-        chart_path = "static/charts/monthly_summary_chart.png"
-
-    data = cur.fetchall()
-    conn.close()
-
-    if not data:
-        print(f"No data available for {period} summary chart.")
-        return
-
-    categories, amounts = zip(*data)
-    plt.figure(figsize=(5, 5))
-    plt.pie(amounts, labels=categories, autopct="%1.1f%%", startangle=140)
-    plt.title(f"{period.capitalize()} Expense Summary")
-    plt.tight_layout()
-    plt.savefig(chart_path)
-    plt.close()
-
-    print(f"Chart saved at {chart_path}")
-if __name__ == "__main__":
-    print("📊 Expense Summary:")
-    print(f"Total Expenses: ₹{get_total_expenses():.2f}")
-    print(f"Total This Month: ₹{get_monthly_total():.2f}")
-    print(f"Average Daily Spending: ₹{get_daily_average():.2f}")
-    print("Category-wise Breakdown:")
-    for category, total in get_expenses_by_category():
-        print(f"  {category}: ₹{total:.2f}")
-
-    print("\n🗓️ Weekly Summary:")
-    print(get_weekly_summary_text())
-
-    print("\n🗓️ Monthly Summary:")
-    print(get_monthly_summary_text())
-
-    print("\n📈 Generating charts...")
-    generate_summary_chart("weekly")
-    generate_summary_chart("monthly")
-
-import sqlite3
-import datetime
-
-DB_NAME = "expenses.db"
-
-def add_expense_to_db(category, amount, date=None):
-    """Add a new expense to the database."""
-    if date is None:
-        date = datetime.date.today().isoformat()
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO expenses (category, amount, date) VALUES (?, ?, ?)",
-        (category, float(amount), date)
+        end = datetime(year, month + 1, 1)
+    return _fetch_single(
+        "SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= ? AND date < ?",
+        (start.strftime(DATE_FORMAT), end.strftime(DATE_FORMAT)),
     )
-    conn.commit()
-    conn.close()
 
-def get_recent_transactions(limit=10):
-    """Return the most recent transactions as a list of dicts."""
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT date, category, amount FROM expenses ORDER BY date DESC, rowid DESC LIMIT ?",
-        (limit,)
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return [{"date": r[0], "category": r[1], "amount": r[2]} for r in rows]
+def get_expenses_by_category() -> List[Dict[str, float]]:
+    try:
+        with get_connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT category, COALESCE(SUM(amount), 0) AS total
+                FROM expenses
+                GROUP BY category
+                ORDER BY total DESC
+                """
+            )
+            return [dict(row) for row in cur.fetchall()]
+    except sqlite3.Error as exc:
+        log_error("Category breakdown error: %s", exc)
+        raise
+
+def get_daily_totals(days: int = 7) -> List[Dict[str, float]]:
+    start = datetime.now() - timedelta(days=days - 1)
+    try:
+        with get_connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT date, COALESCE(SUM(amount), 0) AS total
+                FROM expenses
+                WHERE date >= ?
+                GROUP BY date
+                ORDER BY date
+                """,
+                (start.strftime(DATE_FORMAT),),
+            )
+            return [dict(row) for row in cur.fetchall()]
+    except sqlite3.Error as exc:
+        log_error("Daily totals error: %s", exc)
+        raise
+
+def get_weekly_summary_text() -> str:
+    totals = get_daily_totals(days=7)
+    total_amount = sum(row["total"] for row in totals)
+    avg = total_amount / 7 if totals else 0
+    top_categories = get_expenses_by_category()[:3]
+    lines = [
+        f"Weekly spend: ₹{total_amount:.2f}",
+        f"Daily average: ₹{avg:.2f}",
+    ]
+    if top_categories:
+        cats = ", ".join(f"{c['category']} (₹{c['total']:.0f})" for c in top_categories)
+        lines.append(f"Top categories: {cats}")
+    return "\n".join(lines)
+
+def get_monthly_summary_text() -> str:
+    now = datetime.now()
+    total = get_monthly_total(now.year, now.month)
+    cat_breakdown = get_expenses_by_category()
+    lines = [f"{now.strftime('%B %Y')} total: ₹{total:.2f}"]
+    if cat_breakdown:
+        cats = ", ".join(f"{c['category']} (₹{c['total']:.0f})" for c in cat_breakdown[:5])
+        lines.append(f"Leading categories: {cats}")
+    return "\n".join(lines)
