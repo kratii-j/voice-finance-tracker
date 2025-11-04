@@ -1,15 +1,19 @@
 import os
 import random
+import re
 import tempfile
 import time
-import typing
-from typing import Dict, Optional
+from datetime import datetime
+from typing import Any, Dict, Optional
 
+import dateparser
+from dateparser.search import search_dates
 import numpy as np
 import pyttsx3
 import sounddevice as sd
 import speech_recognition as sr
 from scipy.io.wavfile import write
+from word2number import w2n
 
 recognizer = sr.Recognizer()
 engine = pyttsx3.init()
@@ -23,6 +27,405 @@ for voice in voices:
 
 engine.setProperty("rate", 170)
 engine.setProperty("volume", 1.0)
+
+_AMOUNT_CONTEXT_WORDS = {
+    "add","added","adding",
+    "amount","cost","expense",
+    "log","logged","logging",
+    "pay","paid","paying",
+    "purchase","purchased",
+    "record","recorded","recording",
+    "set",
+    "spend","spending","spent",
+    "to","for","on","under",
+}
+
+_CURRENCY_WORDS = {
+    "₹","rs","rs.","rupee","rupees","inr",
+    "$","usd","dollar","dollars","bucks",
+    "€","euro","euros","£",
+    "pound","pounds",
+}
+
+_NUMBER_WORD_TOKENS = {
+    "zero","one","two","three","four","five",
+    "six","seven","eight","nine","ten",
+    "eleven","twelve","thirteen","fourteen","fifteen",
+    "sixteen","seventeen","eighteen","nineteen","twenty",
+    "thirty","forty","fifty","sixty","seventy","eighty","ninety","hundred",
+    "thousand","lakh","lakhs","million","billion","trillion",
+    "point","and","minus","negative",
+}
+
+_AMOUNT_PATTERN = re.compile(
+    r"(?:₹|rs\\.?|rupees?|inr|usd|dollars?|bucks|euros?|pounds?|[$€£])?\s*(-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)",
+)
+
+_CATEGORY_SYNONYMS = {
+    "food": {
+        "food","meal","meals",
+        "lunch","dinner","breakfast",
+        "snack","snacks",
+        "restaurant","restaurants",
+        "groceries","grocery",
+        "coffee","tea",
+        "drink","drinks",
+    },
+    "transport": {
+        "transport","travel",
+        "taxi","cab","uber","ola",
+        "bus","train","metro",
+        "ride","rides",
+        "petrol","diesel","fuel","gas",
+        "commute",
+    },
+    "entertainment": {
+        "entertainment","movie","movies",
+        "netflix","prime","hotstar","ott",
+        "show","shows","concert",
+        "gaming","game","games","fun",
+    },
+    "shopping": {
+        "shopping","amazon",
+        "mall","purchase","purchases",
+        "bought","buy","buying",
+        "retail","clothes","clothing","apparel",
+    },
+    "utilities": {
+        "utility","utilities",
+        "electricity","power","water","gas",
+        "internet","wifi","broadband",
+        "phone","mobile","recharge",
+        "bill","bills",
+    },
+    "health": {
+        "health","doctor","hospital",
+        "medical","medicine","medicines",
+        "pharmacy","clinic",
+        "fitness","gym",
+    },
+    "education": {
+        "education","study","studies",
+        "course","courses","tuition",
+        "class","classes","training",
+        "book","books",
+    },
+    "rent": {
+        "rent","renting","lease",
+        "housing","house",
+        "apartment","flat",
+    },
+    "savings": {
+        "savings",
+        "investment","invest","investing",
+        "mutual fund","fixed deposit","fd","rd","sip",
+    },
+    "personal": {
+        "personal","care","salon",
+        "beauty","spa","grooming",
+    },
+    "gifts": {
+        "gift","gifts","present","presents",
+    },
+    "charity": {
+        "charity","donation","donations",
+    },
+    "insurance": {
+        "insurance","premium","policy",
+    },
+    "fees": {
+        "fee","fees","subscription","subscriptions",
+    },
+}
+
+_CATEGORY_KEYWORDS = []
+for _canonical, _synonyms in _CATEGORY_SYNONYMS.items():
+    terms = {_canonical, *_synonyms}
+    for term in terms:
+        normalized_term = term.lower().strip()
+        if normalized_term:
+            _CATEGORY_KEYWORDS.append((normalized_term, _canonical))
+
+_CATEGORY_KEYWORDS.sort(key=lambda item: -len(item[0]))
+
+_CATEGORY_TERMS = {
+    canonical: {term.lower() for term in terms | {canonical}}
+    for canonical, terms in _CATEGORY_SYNONYMS.items()
+}
+
+_CATEGORY_PHRASE_PATTERN = re.compile(
+    r"(?:\bto\b|\bon\b|\bfor\b|\bunder\b)\s+([a-z0-9 '&/-]+)",
+)
+
+_DATE_KEYWORDS = {
+    "today","yesterday","tomorrow","tonight","tonite","yday",
+}
+
+_WEEKDAY_KEYWORDS = {
+    "monday","tuesday","wednesday","thursday","friday","saturday","sunday",
+}
+
+_MONTH_KEYWORDS = {
+    "january","february","march","april","may","june",
+    "july","august","september","october","november","december",
+    "jan","feb","mar","apr","jun","jul","aug","sep","sept","oct","nov","dec",
+}
+
+_RELATIVE_DATE_PHRASES = {
+    "last week","last month",
+    "next week","next month",
+    "this week","this month",
+    "last night","last evening",
+}
+
+_NUMERIC_DATE_PATTERN = re.compile(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b")
+_ORDINAL_DATE_PATTERN = re.compile(r"\b\d{1,2}(?:st|nd|rd|th)\b")
+
+_ALL_DATE_TOKENS = (
+    _DATE_KEYWORDS
+    | _WEEKDAY_KEYWORDS
+    | _MONTH_KEYWORDS
+    | {word for phrase in _RELATIVE_DATE_PHRASES for word in phrase.split()}
+)
+
+_ACTION_PATTERNS = {
+    "exit": [r"\b(?:stop|exit|quit|close|shut down|goodbye|bye)\b"],
+    "help": [r"\bhelp\b", r"what can you do", r"list commands"],
+    "repeat": [r"\brepeat\b", r"say (?:that )?again", r"last command"],
+    "delete": [
+        r"\b(?:delete|remove|undo|erase|cancel)(?:\s+(?:last\s+)?.*?(?:expense|entry|transaction))?\b",
+        r"\bcancel last expense\b",
+        r"\b(delete|remove|undo)\b",
+    ],
+    "recent": [
+        r"\brecent\b.*\b(expense|expenses|entries|transactions)\b",
+        r"\bshow (?:me )?(?:the )?(?:last|recent)\b",
+        r"\blast\b.*\b(expense|entry)\b",
+        r"\bexpense history\b",
+        r"\brecent\b",
+    ],
+    "weekly": [
+        r"\bweekly\b.*\b(summary|report|breakdown|spend|spending|expenses|stats)\b",
+        r"\bthis week'?s?\b.*\b(summary|report|spending|expenses|stats)\b",
+        r"\bweek(?:ly)? summary\b",
+        r"\bweekly\b",
+    ],
+    "monthly": [
+        r"\bmonthly\b.*\b(summary|report|breakdown|spend|spending|expenses|stats)\b",
+        r"\bthis month'?s?\b.*\b(summary|report|spending|expenses|stats)\b",
+        r"\bmonth(?:ly)? summary\b",
+        r"\bmonthly\b",
+    ],
+    "balance": [
+        r"\bbalance\b",
+        r"total\s+(?:spent|spend)(?:\s+today)?",
+        r"how much (?:have|did) i\s+(?:spend|spent)",
+        r"\bspending\s+(?:today|so far)\b",
+        r"\bexpense total\b",
+        r"\btoday'?s? total\b",
+    ],
+}
+
+
+def _normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _has_amount_context(fragment: str, include_connectors: bool = True) -> bool:
+    tokens = re.findall(r"[a-z₹$€£]+", fragment.lower())
+    context_words = _AMOUNT_CONTEXT_WORDS if include_connectors else _AMOUNT_CONTEXT_WORDS - {
+        "to",
+        "for",
+        "on",
+        "under",
+    }
+    if any(word in context_words for word in tokens):
+        return True
+    if any(token in _CURRENCY_WORDS for token in tokens):
+        return True
+    if any(symbol in fragment for symbol in {"₹", "$", "€", "£"}):
+        return True
+    return False
+
+
+def _extract_numeric_amount(text: str) -> Optional[float]:
+    for match in _AMOUNT_PATTERN.finditer(text):
+        start, end = match.span()
+        matched_text = match.group(0)
+        numeric_part = match.group(1)
+        if not numeric_part:
+            continue
+        context = text[max(0, start - 12) : min(len(text), end + 12)]
+        has_currency = any(token in _CURRENCY_WORDS for token in re.findall(r"[a-z₹$€£]+", matched_text.lower()))
+        if not has_currency and not _has_amount_context(context):
+            continue
+        try:
+            value = float(numeric_part.replace(",", ""))
+        except ValueError:
+            continue
+        return int(value) if value.is_integer() else value
+
+    for match in re.finditer(r"-?\d+(?:\.\d+)?", text):
+        start, end = match.span()
+        context = text[max(0, start - 10) : min(len(text), end + 10)]
+        if not _has_amount_context(context):
+            continue
+        try:
+            value = float(match.group(0).replace(",", ""))
+        except ValueError:
+            continue
+        return int(value) if value.is_integer() else value
+    return None
+
+
+def _extract_word_amount(text: str) -> Optional[float]:
+    tokens = re.findall(r"[a-z]+", text.lower())
+    if not tokens:
+        return None
+    max_span = 7
+    for index, token in enumerate(tokens):
+        if token not in _NUMBER_WORD_TOKENS:
+            continue
+        phrase_tokens = []
+        for inner in range(index, min(len(tokens), index + max_span)):
+            candidate = tokens[inner]
+            if candidate not in _NUMBER_WORD_TOKENS:
+                break
+            phrase_tokens.append(candidate)
+        if not phrase_tokens:
+            continue
+        phrase = " ".join(phrase_tokens)
+        try:
+            value = float(w2n.word_to_num(phrase))
+        except ValueError:
+            continue
+        prev_token = tokens[index - 1] if index > 0 else ""
+        next_index = index + len(phrase_tokens)
+        next_token = tokens[next_index] if next_index < len(tokens) else ""
+        if _has_amount_context(prev_token, include_connectors=False) or _has_amount_context(
+            next_token, include_connectors=False
+        ):
+            return int(value) if value.is_integer() else value
+        context_slice = re.search(r"\b" + re.escape(phrase) + r"\b", text.lower())
+        if context_slice:
+            start, end = context_slice.span()
+            context = text[max(0, start - 10) : min(len(text), end + 10)]
+            if _has_amount_context(context, include_connectors=False):
+                return int(value) if value.is_integer() else value
+    return None
+
+
+def _extract_amount(text: str) -> Optional[float]:
+    numeric = _extract_numeric_amount(text)
+    if numeric is not None:
+        return numeric
+    return _extract_word_amount(text)
+
+
+def _category_from_text(fragment: str) -> Optional[str]:
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", fragment.lower())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return None
+    padded = f" {cleaned} "
+    for synonym, canonical in _CATEGORY_KEYWORDS:
+        if f" {synonym} " in padded:
+            return canonical
+    return None
+
+
+def _strip_known_terms(phrase: str, category: str) -> Optional[str]:
+    cleaned = phrase
+    for term in _CATEGORY_TERMS.get(category, set()):
+        cleaned = re.sub(
+            r"\b" + re.escape(term) + r"\b",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+    for keyword in _ALL_DATE_TOKENS:
+        cleaned = re.sub(
+            r"\b" + re.escape(keyword) + r"\b",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+    cleaned = re.sub(r"[^A-Za-z0-9\s]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or None
+
+
+def _extract_category_and_description(text: str, original_text: str) -> tuple[str, Optional[str]]:
+    for match in _CATEGORY_PHRASE_PATTERN.finditer(text):
+        phrase_lower = match.group(1).strip()
+        category = _category_from_text(phrase_lower)
+        if category:
+            original_slice = original_text[match.start(1) : match.end(1)]
+            description = _strip_known_terms(original_slice, category)
+            return category, description
+    category = _category_from_text(text)
+    if category:
+        return category, None
+    return "uncategorized", None
+
+
+def _contains_date_signal(text: str) -> bool:
+    lowered = text.lower()
+    if any(keyword in lowered for keyword in _DATE_KEYWORDS):
+        return True
+    if any(phrase in lowered for phrase in _RELATIVE_DATE_PHRASES):
+        return True
+    tokens = set(re.findall(r"[a-z]+", lowered))
+    if tokens & _WEEKDAY_KEYWORDS:
+        return True
+    if tokens & _MONTH_KEYWORDS:
+        return True
+    if _NUMERIC_DATE_PATTERN.search(lowered) or _ORDINAL_DATE_PATTERN.search(lowered):
+        return True
+    return False
+
+
+def _extract_date(original_text: str) -> Optional[str]:
+    if not _contains_date_signal(original_text):
+        return None
+
+    settings = {
+        "PREFER_DATES_FROM": "past",
+        "RELATIVE_BASE": datetime.now(),
+        "RETURN_AS_TIMEZONE_AWARE": False,
+        "DATE_ORDER": "DMY",
+    }
+
+    search_results = search_dates(original_text, settings=settings)
+    if search_results:
+        for fragment, parsed in search_results:
+            fragment_lower = fragment.lower()
+            if any(token in fragment_lower for token in _ALL_DATE_TOKENS) or _NUMERIC_DATE_PATTERN.search(
+                fragment_lower
+            ) or _ORDINAL_DATE_PATTERN.search(fragment_lower):
+                return parsed.date().isoformat()
+
+    parsed = dateparser.parse(original_text, settings=settings)
+    if parsed:
+        return parsed.date().isoformat()
+    return None
+
+
+def _detect_action(text: str, has_amount: bool, has_category: bool) -> Optional[str]:
+    for action, patterns in _ACTION_PATTERNS.items():
+        if any(re.search(pattern, text) for pattern in patterns):
+            return action
+
+    add_patterns = [
+        r"\b(add|record|log|note|register|capture|save|set aside)\b",
+        r"\b(spend|spent|pay|paid|purchase|purchased|buy|bought)\b",
+    ]
+    if any(re.search(pattern, text) for pattern in add_patterns):
+        return "add"
+
+    if has_amount or has_category:
+        return "add"
+    return None
 
 _TONE_RESPONSES = {
     "success": [
@@ -135,62 +538,35 @@ def get_voice_input(
     return ""
 
 
-def parse_expense(text: str) -> Dict[str, typing.Any]:
+def parse_expense(text: str) -> Dict[str, Any]:
     if not text or not text.strip():
         return {"action": "none"}
 
-    text = text.lower()
+    raw_text = text.strip()
+    lower_text = raw_text.lower()
+    normalized_text = _normalize_text(raw_text)
 
-    import re
+    amount = _extract_amount(normalized_text)
+    category, description = _extract_category_and_description(lower_text, raw_text)
+    has_category = category != "uncategorized"
 
-    def extract_amount(raw: str) -> Optional[float]:
-        match = re.search(r"([₹$€]?\s*-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)", raw)
-        if not match:
-            return None
-        cleaned = re.sub(r"[^\d\.-]", "", match.group(1))
-        try:
-            value = float(cleaned)
-            return int(value) if value.is_integer() else value
-        except ValueError:
-            return None
+    action = _detect_action(normalized_text, amount is not None, has_category)
 
-    if re.search(r"\b(stop|exit|quit)\b", text):
-        return {"action": "exit"}
+    if action is None:
+        return {"action": "unknown", "raw": normalized_text}
 
-    if re.search(r"\bhelp\b", text):
-        return {"action": "help"}
+    if action == "add":
+        expense_date = _extract_date(raw_text)
+        result: Dict[str, Any] = {
+            "action": "add",
+            "amount": amount,
+            "category": category,
+            "date": expense_date,
+            "description": description,
+        }
+        return result
 
-    if re.search(r"\brepeat\b", text):
-        return {"action": "repeat"}
-
-    if re.search(r"\b(add|spent|record|put|note)\b", text):
-        amount = extract_amount(text)
-        category_match = re.search(
-            r"(?:to|on|for|under)\s+([a-z0-9 ]+?)(?:[.,!?]| and |$)", text
-        )
-        category = (
-            re.sub(r"[^\w\s]", "", category_match.group(1)).strip()
-            if category_match
-            else "uncategorized"
-        )
-        return {"action": "add", "amount": amount, "category": category}
-
-    if re.search(r"\b(balance|total today|today)\b", text):
-        return {"action": "balance"}
-
-    if re.search(r"\b(recent|last)\b", text):
-        return {"action": "recent"}
-
-    if re.search(r"\bweekly\b", text):
-        return {"action": "weekly"}
-
-    if re.search(r"\bmonthly\b", text):
-        return {"action": "monthly"}
-
-    if re.search(r"\b(delete|remove|undo)\b", text):
-        return {"action": "delete"}
-
-    return {"action": "unknown", "raw": text}
+    return {"action": action}
 
 
 def confirm_amount_flow(

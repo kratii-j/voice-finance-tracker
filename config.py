@@ -4,6 +4,10 @@ from datetime import datetime
 DB_NAME = "expenses.db"
 LOG_DIR = "logs"
 CHART_DIR = os.path.join("static", "charts")
+BUDGETS_FILE = "budgets.json"
+
+# Default percentage of a budget that should trigger a warning
+DEFAULT_BUDGET_WARN_THRESHOLD = 0.8
 
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
 

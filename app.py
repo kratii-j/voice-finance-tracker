@@ -2,6 +2,7 @@ import os
 from typing import Optional
 from flask import Flask, jsonify, render_template, request
 
+from budget_module import evaluate_monthly_budgets, summarize_alerts
 from database import add_expense, get_recent_expenses, get_total_by_category, get_total_today
 from summary_module import (
     get_monthly_summary_text,
@@ -24,6 +25,7 @@ def _to_static_path(path: Optional[str]) -> Optional[str]:
 
 def _build_dashboard_context():
     charts = generate_all_charts()
+    budget_statuses = evaluate_monthly_budgets()
     return {
         "total_today": get_total_today(),
         "monthly_total": get_monthly_total(),
@@ -31,6 +33,19 @@ def _build_dashboard_context():
         "recent_expenses": get_recent_expenses(5),
         "weekly_summary": get_weekly_summary_text(),
         "monthly_summary": get_monthly_summary_text(),
+        "budget_status": [
+            {
+                "category": status.category,
+                "limit": status.limit,
+                "spent": status.spent,
+                "remaining": status.remaining,
+                "percentage": status.percentage,
+                "level": status.level,
+                "message": status.message,
+            }
+            for status in budget_statuses
+        ],
+        "budget_alerts": summarize_alerts(budget_statuses),
         "charts": {
             key: _to_static_path(path)
             for key, path in charts.items()
@@ -52,6 +67,7 @@ def api_summary():
         weekly_summary=context["weekly_summary"],
         monthly_summary=context["monthly_summary"],
         category_totals=context["category_totals"],
+        budget_alerts=context["budget_alerts"],
     )
 
 

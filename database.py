@@ -252,6 +252,34 @@ def get_monthly_summary(year: Optional[int] = None, month: Optional[int] = None)
         log_error("Failed to fetch monthly summary: %s", exc)
         raise
 
+
+def get_monthly_totals_by_category(year: Optional[int] = None, month: Optional[int] = None) -> List[Dict[str, Any]]:
+    now = datetime.now()
+    year = year or now.year
+    month = month or now.month
+    start = datetime(year, month, 1)
+    if month == 12:
+        end = datetime(year + 1, 1, 1)
+    else:
+        end = datetime(year, month + 1, 1)
+    try:
+        with create_connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT category, COALESCE(SUM(amount), 0) AS total
+                FROM expenses
+                WHERE date >= ? AND date < ?
+                GROUP BY category
+                ORDER BY total DESC
+                """,
+                (start.strftime(DATE_FORMAT), end.strftime(DATE_FORMAT)),
+            )
+            rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    except sqlite3.Error as exc:
+        log_error("Failed to fetch monthly category totals: %s", exc)
+        raise
+
 def get_all_expenses() -> List[Dict[str, Any]]:
     try:
         with create_connection() as conn:
