@@ -1,6 +1,4 @@
-"""Helpers for reading budget limits and generating alert messages."""
 from __future__ import annotations
-
 import json
 import os
 from dataclasses import dataclass
@@ -10,7 +8,6 @@ from typing import Dict, List, Optional
 from config import BUDGETS_FILE, DEFAULT_BUDGET_WARN_THRESHOLD
 from database import get_monthly_totals_by_category
 from logger import log_error, log_info
-
 
 @dataclass
 class BudgetLimit:
@@ -22,7 +19,6 @@ class BudgetLimit:
     def warn_amount(self) -> float:
         return self.limit * self.warn_ratio
 
-
 @dataclass
 class BudgetStatus:
     category: str
@@ -32,7 +28,6 @@ class BudgetStatus:
     percentage: float
     level: str
     message: str
-
 
 _DEFAULT_BUDGETS: Dict[str, Dict[str, Dict[str, float]]] = {
     "monthly": {
@@ -50,8 +45,9 @@ def _ensure_budget_file(path: str = BUDGETS_FILE) -> None:
     if os.path.exists(path):
         return
     try:
-        with open(path, "w", encoding="ascii") as handle:
-            json.dump(_DEFAULT_BUDGETS, handle, indent=2)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(_DEFAULT_BUDGETS, handle, indent=2, ensure_ascii=False)
         log_info("Created default budget configuration at %s", path)
     except OSError as exc:
         log_error("Failed to create default budgets: %s", exc)
@@ -92,6 +88,61 @@ def _to_budget_limits(config: Dict[str, Dict[str, Dict[str, float]]]) -> Dict[st
 def get_budget_limits() -> Dict[str, BudgetLimit]:
     config = load_budget_config()
     return _to_budget_limits(config)
+
+
+def set_budget_limit(category: str, limit: float, warn_at: Optional[float] = None, path: str = BUDGETS_FILE) -> None:
+    """Create or update a monthly budget for a category and persist it.
+    If warn_at is not provided, uses the default warn threshold from config or DEFAULT_BUDGET_WARN_THRESHOLD.
+    """
+    category_key = category.lower().strip()
+    if not category_key:
+        raise ValueError("category is required")
+    if limit is None or float(limit) <= 0:
+        raise ValueError("limit must be a positive number")
+
+    config = load_budget_config(path)
+    defaults = config.get("defaults", {})
+    if warn_at is None:
+        warn_at = float(defaults.get("warn_at", DEFAULT_BUDGET_WARN_THRESHOLD))
+    config.setdefault("monthly", {})[category_key] = {"limit": float(limit), "warn_at": float(warn_at)}
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(config, handle, indent=2, ensure_ascii=False)
+        log_info("Set budget for %s: limit=%s warn_at=%s", category_key, limit, warn_at)
+    except OSError as exc:
+        log_error("Failed to persist budget config: %s", exc)
+        raise
+
+
+def remove_budget_limit(category: str, path: str = BUDGETS_FILE) -> bool:
+    """Remove a monthly budget for category. Returns True if removed."""
+    category_key = category.lower().strip()
+    config = load_budget_config(path)
+    monthly = config.get("monthly", {})
+    if category_key in monthly:
+        monthly.pop(category_key)
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(config, handle, indent=2, ensure_ascii=False)
+            log_info("Removed budget for %s", category_key)
+            return True
+        except OSError as exc:
+            log_error("Failed to persist budget removal: %s", exc)
+            raise
+    return False
+
+
+def format_budget_summary(year: Optional[int] = None, month: Optional[int] = None) -> str:
+    """Return a human-friendly summary of current budgets and spend."""
+    statuses = evaluate_monthly_budgets(year=year, month=month)
+    if not statuses:
+        return "No budgets configured."
+    lines: List[str] = []
+    for s in statuses:
+        pct = s.percentage * 100
+        lines.append(f"{s.category}: ₹{s.spent:.0f} / ₹{s.limit:.0f} ({pct:.0f}%) — {s.level}")
+    return "\n".join(lines)
 
 
 def _assess_single_budget(spent: float, limit: BudgetLimit) -> BudgetStatus:
@@ -159,6 +210,9 @@ __all__ = [
     "BudgetStatus",
     "evaluate_monthly_budgets",
     "get_alert_for_category",
+    "set_budget_limit",
+    "remove_budget_limit",
+    "format_budget_summary",
     "get_budget_limits",
     "load_budget_config",
     "summarize_alerts",

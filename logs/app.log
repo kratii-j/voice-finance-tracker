@@ -46,3 +46,22 @@
 2025-11-04 00:33:50 [INFO] voice_finance_tracker: Inserted expense 13 -> {'amount': 50, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-04', 'time': '00:33:50'}
 2025-11-04 00:34:02 [INFO] voice_finance_tracker: Inserted expense 14 -> {'amount': 300, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-04', 'time': '00:34:02'}
 2025-11-04 00:35:10 [INFO] voice_finance_tracker: Deleted last expense id=14
+2025-11-05 12:42:58 [INFO] voice_finance_tracker: Set budget for tests: limit=1234 warn_at=0.8
+2025-11-05 12:42:58 [INFO] voice_finance_tracker: Removed budget for tests
+2025-11-05 13:00:57 [INFO] voice_finance_tracker: Set budget for tests: limit=1234 warn_at=0.8
+2025-11-05 13:00:57 [INFO] voice_finance_tracker: Removed budget for tests
+2025-11-06 01:47:22 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-06 01:47:33 [INFO] voice_finance_tracker: Inserted expense 15 -> {'amount': 420, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '01:47:33'}
+2025-11-06 01:47:46 [INFO] voice_finance_tracker: Inserted expense 16 -> {'amount': 400, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '01:47:46'}
+2025-11-06 01:47:58 [INFO] voice_finance_tracker: Inserted expense 17 -> {'amount': 100, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '01:47:58'}
+2025-11-06 01:57:49 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-06 01:58:00 [INFO] voice_finance_tracker: Inserted expense 18 -> {'amount': 5000, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '01:58:00'}
+2025-11-06 01:58:51 [INFO] voice_finance_tracker: Inserted expense 19 -> {'amount': 10000.0, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '01:58:51'}
+2025-11-06 02:02:44 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-06 02:03:05 [INFO] voice_finance_tracker: Deleted last expense id=19
+2025-11-06 02:03:56 [INFO] voice_finance_tracker: Inserted expense 20 -> {'amount': 1000, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '02:03:56'}
+2025-11-06 02:04:08 [INFO] voice_finance_tracker: Inserted expense 21 -> {'amount': 4000, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '02:04:08'}
+2025-11-06 09:33:35 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-06 09:34:48 [INFO] voice_finance_tracker: Inserted expense 1 -> {'amount': 3000.0, 'category': 'entertainment', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '09:34:48'}
+2025-11-06 21:35:24 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-06 21:36:21 [INFO] voice_finance_tracker: Database schema ensured.

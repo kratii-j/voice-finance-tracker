@@ -35,16 +35,14 @@ _AMOUNT_CONTEXT_WORDS = {
     "pay","paid","paying",
     "purchase","purchased",
     "record","recorded","recording",
-    "set",
-    "spend","spending","spent",
+    "set","spend","spending","spent",
     "to","for","on","under",
 }
 
 _CURRENCY_WORDS = {
     "₹","rs","rs.","rupee","rupees","inr",
     "$","usd","dollar","dollars","bucks",
-    "€","euro","euros","£",
-    "pound","pounds",
+    "€","euro","euros","£","pound","pounds",
 }
 
 _NUMBER_WORD_TOKENS = {
@@ -58,7 +56,7 @@ _NUMBER_WORD_TOKENS = {
 }
 
 _AMOUNT_PATTERN = re.compile(
-    r"(?:₹|rs\\.?|rupees?|inr|usd|dollars?|bucks|euros?|pounds?|[$€£])?\s*(-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)",
+    r"(?:₹|rs\.?|rupees?|inr|usd|dollars?|bucks|euros?|pounds?|[$€£])?\s*(-?\d+(?:[,\s]\d{3})*(?:\.\d+)?)",
 )
 
 _CATEGORY_SYNONYMS = {
@@ -74,10 +72,8 @@ _CATEGORY_SYNONYMS = {
     "transport": {
         "transport","travel",
         "taxi","cab","uber","ola",
-        "bus","train","metro",
-        "ride","rides",
-        "petrol","diesel","fuel","gas",
-        "commute",
+        "bus","train","metro","ride","rides",
+        "petrol","diesel","fuel","gas","commute",
     },
     "entertainment": {
         "entertainment","movie","movies",
@@ -86,38 +82,31 @@ _CATEGORY_SYNONYMS = {
         "gaming","game","games","fun",
     },
     "shopping": {
-        "shopping","amazon",
-        "mall","purchase","purchases",
-        "bought","buy","buying",
-        "retail","clothes","clothing","apparel",
+        "shopping","amazon","mall","purchase","purchases",
+        "bought","buy","buying","retail","clothes","clothing","apparel",
     },
     "utilities": {
         "utility","utilities",
         "electricity","power","water","gas",
         "internet","wifi","broadband",
-        "phone","mobile","recharge",
-        "bill","bills",
+        "phone","mobile","recharge","bill","bills",
     },
     "health": {
         "health","doctor","hospital",
         "medical","medicine","medicines",
-        "pharmacy","clinic",
-        "fitness","gym",
+        "pharmacy","clinic","fitness","gym",
     },
     "education": {
         "education","study","studies",
         "course","courses","tuition",
-        "class","classes","training",
-        "book","books",
+        "class","classes","training","book","books",
     },
     "rent": {
         "rent","renting","lease",
-        "housing","house",
-        "apartment","flat",
+        "housing","house","apartment","flat",
     },
     "savings": {
-        "savings",
-        "investment","invest","investing",
+        "savings","investment","invest","investing",
         "mutual fund","fixed deposit","fd","rd","sip",
     },
     "personal": {
@@ -172,10 +161,8 @@ _MONTH_KEYWORDS = {
 }
 
 _RELATIVE_DATE_PHRASES = {
-    "last week","last month",
-    "next week","next month",
-    "this week","this month",
-    "last night","last evening",
+    "last week","last month","next week","next month",
+    "this week","this month","last night","last evening",
 }
 
 _NUMERIC_DATE_PATTERN = re.compile(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b")
@@ -226,18 +213,27 @@ _ACTION_PATTERNS = {
     ],
 }
 
+# Additional explicit patterns for budget intents
+_SET_BUDGET_PATTERNS = [
+    r"\bset\b.*\bbudget\b",            # e.g., set budget for food to 5000
+    r"\bset a budget\b",
+    r"\bbudget for\b.*\bset\b",
+]
+
+_SHOW_BUDGETS_PATTERNS = [
+    r"\b(show|what(?:'s| is)|list)\b.*\bbudgets?\b",
+    r"\bbudget status\b",
+    r"\bshow my budgets\b",
+    r"\bwhat'?s my budget\b",
+]
 
 def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
-
 def _has_amount_context(fragment: str, include_connectors: bool = True) -> bool:
     tokens = re.findall(r"[a-z₹$€£]+", fragment.lower())
     context_words = _AMOUNT_CONTEXT_WORDS if include_connectors else _AMOUNT_CONTEXT_WORDS - {
-        "to",
-        "for",
-        "on",
-        "under",
+        "to","for","on","under",
     }
     if any(word in context_words for word in tokens):
         return True
@@ -246,7 +242,6 @@ def _has_amount_context(fragment: str, include_connectors: bool = True) -> bool:
     if any(symbol in fragment for symbol in {"₹", "$", "€", "£"}):
         return True
     return False
-
 
 def _extract_numeric_amount(text: str) -> Optional[float]:
     for match in _AMOUNT_PATTERN.finditer(text):
@@ -260,7 +255,8 @@ def _extract_numeric_amount(text: str) -> Optional[float]:
         if not has_currency and not _has_amount_context(context):
             continue
         try:
-            value = float(numeric_part.replace(",", ""))
+            cleaned = numeric_part.replace(",", "").replace(" ", "")
+            value = float(cleaned)
         except ValueError:
             continue
         return int(value) if value.is_integer() else value
@@ -412,6 +408,12 @@ def _extract_date(original_text: str) -> Optional[str]:
 
 
 def _detect_action(text: str, has_amount: bool, has_category: bool) -> Optional[str]:
+    # First, check explicit budget intents
+    if any(re.search(p, text) for p in _SET_BUDGET_PATTERNS):
+        return "set_budget"
+    if any(re.search(p, text) for p in _SHOW_BUDGETS_PATTERNS):
+        return "show_budgets"
+
     for action, patterns in _ACTION_PATTERNS.items():
         if any(re.search(pattern, text) for pattern in patterns):
             return action
@@ -429,30 +431,21 @@ def _detect_action(text: str, has_amount: bool, has_category: bool) -> Optional[
 
 _TONE_RESPONSES = {
     "success": [
-        "Done.",
-        "Got it.",
-        "All set.",
-        "Expense recorded.",
+        "Done.","Got it.","All set.","Expense recorded.",
     ],
     "info": [
-        "Okay.",
-        "Here you go.",
-        "Let me tell you.",
+        "Okay.","Here you go.","Let me tell you.",
     ],
     "error": [
-        "Sorry, that failed.",
-        "Hmm, something went wrong.",
-        "I could not do that.",
+        "Sorry, that failed.","Hmm, something went wrong.","I could not do that.",
     ],
     "summary": [
-        "Here is the summary.",
-        "Let me summarize.",
+        "Here is the summary.","Let me summarize.",
     ],
     "neutral": [""],
 }
 
 last_transcript: Optional[str] = None
-
 
 def speak(text: str, tone: str = "neutral") -> None:
     if not text:
@@ -464,7 +457,6 @@ def speak(text: str, tone: str = "neutral") -> None:
     engine.runAndWait()
     if len(utterance.split()) > 12:
         time.sleep(0.4)
-
 
 def respond(action: str, message: str) -> None:
     tone_map = {
@@ -480,7 +472,6 @@ def respond(action: str, message: str) -> None:
     }
     speak(message, tone=tone_map.get(action, "neutral"))
 
-
 def _record_audio(duration: float, fs: int) -> np.ndarray:
     recording = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype="int16")
     sd.wait()
@@ -488,7 +479,6 @@ def _record_audio(duration: float, fs: int) -> np.ndarray:
     if recording.ndim > 1:
         recording = recording.squeeze(axis=1)
     return recording.astype(np.int16)
-
 
 def get_voice_input(
     duration: float = 5.0,
@@ -537,7 +527,6 @@ def get_voice_input(
                     pass
     return ""
 
-
 def parse_expense(text: str) -> Dict[str, Any]:
     if not text or not text.strip():
         return {"action": "none"}
@@ -566,8 +555,21 @@ def parse_expense(text: str) -> Dict[str, Any]:
         }
         return result
 
-    return {"action": action}
+    if action == "set_budget":
+        # Return parsed amount (may be None) and detected category (or None if uncategorized)
+        return {
+            "action": "set_budget",
+            "amount": amount,
+            "category": None if category == "uncategorized" else category,
+        }
 
+    if action == "show_budgets":
+        return {
+            "action": "show_budgets",
+            "category": None if category == "uncategorized" else category,
+        }
+
+    return {"action": action}
 
 def confirm_amount_flow(
     prompt_text: str = "Please say the amount now.",
@@ -587,7 +589,5 @@ def confirm_amount_flow(
             speak("I still did not hear a number. Try again.", tone="error")
     return None
 
-
 def repeat_last_transcript() -> Optional[str]:
     return last_transcript
-

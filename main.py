@@ -1,11 +1,13 @@
-# main.py
-
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from budget_module import (
     evaluate_monthly_budgets,
     get_alert_for_category,
+    set_budget_limit,
+    remove_budget_limit,
+    format_budget_summary,
+    get_budget_limits,
 )
 from config import DATE_FORMAT
 
@@ -25,7 +27,6 @@ from database import (
 )
 from summary_module import get_monthly_summary_text, get_weekly_summary_text
 
-
 def show_help() -> str:
     help_text = (
         "Try commands like:\n"
@@ -34,16 +35,17 @@ def show_help() -> str:
         "- Show recent expenses\n"
         "- Give weekly summary\n"
         "- Delete last expense\n"
+        "- Set budget for food to 5000\n"
+        "- What's my budget / Show budgets\n"
         "- Repeat last command\n"
         "- Stop to exit"
     )
     print(help_text)
     speak(
-        "You can add expenses, ask for balance, recent items, weekly or monthly summary, delete last expense, or say stop.",
+        "You can add expenses, set or ask about budgets, ask for balance, recent items, weekly or monthly summary, delete last expense, or say stop.",
         tone="info",
     )
     return help_text
-
 
 def _speak_recent(items: List[dict]) -> None:
     if not items:
@@ -130,6 +132,43 @@ def main() -> None:
                 respond("error", "Failed to add the expense.")
             continue
 
+        # Set a monthly budget via voice
+        if action == "set_budget":
+            amount = command.get("amount")
+            category = command.get("category") or "uncategorized"
+            if amount is None:
+                amount = confirm_amount_flow("Please tell the monthly budget amount.")
+                if amount is None:
+                    respond("error", "Budget amount missing. Budget not set.")
+                    continue
+            try:
+                set_budget_limit(category, float(amount))
+                respond("info", f"Budget set: ₹{float(amount):.0f} per month for {category}.")
+                previous_command = {"action": "set_budget", "amount": float(amount), "category": category}
+            except Exception:
+                respond("error", "Failed to set budget.")
+            continue
+
+        # Show budgets summary or a specific category budget status
+        if action == "show_budgets":
+            category = command.get("category")
+            if category:
+                status = get_alert_for_category(category)
+                if status:
+                    respond("info", status.message)
+                else:
+                    limits = get_budget_limits()
+                    limit = limits.get(category.lower())
+                    if limit:
+                        respond("info", f"{category} budget is ₹{limit.limit:.0f} per month.")
+                    else:
+                        respond("info", f"No budget configured for {category}.")
+            else:
+                summary = format_budget_summary()
+                respond("info", summary)
+            previous_command = {"action": "show_budgets", "category": category} if category else {"action": "show_budgets"}
+            continue
+
         if action == "balance":
             total = get_total_today()
             respond("balance", f"Today's total spend is ₹{total:.2f}.")
@@ -178,7 +217,6 @@ def main() -> None:
 
     if attempts >= MAX_ATTEMPTS:
         respond("error", "No command detected repeatedly. Exiting.")
-
 
 if __name__ == "__main__":
     main()

@@ -9,7 +9,7 @@ from summary_module import (
     get_monthly_total,
     get_weekly_summary_text,
 )
-from visual_module_updated import ensure_chart_dir, generate_all_charts
+from visual_module import ensure_chart_dir, generate_all_charts
 from logger import log_error, log_info
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
