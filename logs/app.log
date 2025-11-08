@@ -17,6 +17,7 @@
 2025-10-25 09:56:24 [INFO] voice_finance_tracker: Inserted expense 4 -> {'amount': 400, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-10-25', 'time': '09:56:24'}
 2025-10-25 09:57:34 [INFO] voice_finance_tracker: Inserted expense 5 -> {'amount': 100.0, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-10-25', 'time': '09:57:34'}
 2025-10-25 09:57:35 [INFO] voice_finance_tracker: Expense added via API (id=5)
+<<<<<<< Updated upstream
 2025-10-31 18:38:15 [INFO] voice_finance_tracker: Database schema ensured.
 2025-10-31 18:38:27 [INFO] voice_finance_tracker: Inserted expense 6 -> {'amount': 400, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-10-31', 'time': '18:38:27'}
 2025-10-31 18:38:40 [INFO] voice_finance_tracker: Inserted expense 7 -> {'amount': 600, 'category': 'entertainment', 'description': None, 'payment_method': None, 'date': '2025-10-31', 'time': '18:38:40'}
@@ -65,3 +66,24 @@
 2025-11-06 09:34:48 [INFO] voice_finance_tracker: Inserted expense 1 -> {'amount': 3000.0, 'category': 'entertainment', 'description': None, 'payment_method': None, 'date': '2025-11-06', 'time': '09:34:48'}
 2025-11-06 21:35:24 [INFO] voice_finance_tracker: Database schema ensured.
 2025-11-06 21:36:21 [INFO] voice_finance_tracker: Database schema ensured.
+=======
+2025-11-02 21:21:18 [ERROR] voice_finance_tracker: Failed to fetch recent expenses: no such column: description
+2025-11-02 21:26:59 [ERROR] voice_finance_tracker: Failed to fetch recent expenses: no such column: description
+2025-11-02 21:31:17 [ERROR] voice_finance_tracker: Failed to fetch recent expenses: no such column: description
+2025-11-02 21:32:16 [ERROR] voice_finance_tracker: Failed to fetch recent expenses: no such column: description
+2025-11-03 01:09:23 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 01:09:47 [INFO] voice_finance_tracker: Inserted expense 1 -> {'amount': 400, 'category': 'uncategorized', 'description': None, 'payment_method': None, 'date': '2025-11-03', 'time': '01:09:47'}
+2025-11-03 01:09:54 [INFO] voice_finance_tracker: Inserted expense 2 -> {'amount': 400, 'category': 'uncategorized', 'description': None, 'payment_method': None, 'date': '2025-11-03', 'time': '01:09:54'}
+2025-11-03 01:10:01 [INFO] voice_finance_tracker: Inserted expense 3 -> {'amount': 500, 'category': 'uncategorized', 'description': None, 'payment_method': None, 'date': '2025-11-03', 'time': '01:10:01'}
+2025-11-03 01:11:48 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 01:12:44 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 01:13:40 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 01:14:34 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 01:15:59 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 01:16:47 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 01:20:43 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 19:55:53 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-03 19:56:05 [INFO] voice_finance_tracker: Inserted expense 4 -> {'amount': 200, 'category': 'food', 'description': None, 'payment_method': None, 'date': '2025-11-03', 'time': '19:56:05'}
+2025-11-04 00:47:56 [INFO] voice_finance_tracker: Database schema ensured.
+2025-11-04 01:09:45 [INFO] voice_finance_tracker: Database schema ensured.
+>>>>>>> Stashed changes
