@@ -381,13 +381,14 @@ def _contains_date_signal(text: str) -> bool:
     return False
 
 
-def _extract_date(original_text: str) -> Optional[str]:
+def _extract_date(original_text: str, *, base_datetime: Optional[datetime] = None) -> Optional[str]:
     if not _contains_date_signal(original_text):
         return None
 
+    base_reference = base_datetime or datetime.now()
     settings = {
         "PREFER_DATES_FROM": "past",
-        "RELATIVE_BASE": datetime.now(),
+        "RELATIVE_BASE": base_reference,
         "RETURN_AS_TIMEZONE_AWARE": False,
         "DATE_ORDER": "DMY",
     }
@@ -591,3 +592,14 @@ def confirm_amount_flow(
 
 def repeat_last_transcript() -> Optional[str]:
     return last_transcript
+
+# TESTS for _extract_date base_datetime parameter
+def _test_extract_date_with_base_datetime():
+    test_text = "yesterday"
+    fixed_base = datetime(2024, 6, 10, 12, 0, 0)
+    result = _extract_date(test_text, base_datetime=fixed_base)
+    assert result == "2024-06-09", f"Expected 2024-06-09, got {result}"
+
+if __name__ == "__main__":
+    _test_extract_date_with_base_datetime()
+    print("Test passed: _extract_date uses base_datetime correctly.")

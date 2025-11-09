@@ -41,28 +41,34 @@ _DEFAULT_BUDGETS: Dict[str, Dict[str, Dict[str, float]]] = {
 }
 
 
-def _ensure_budget_file(path: str = BUDGETS_FILE) -> None:
-    if os.path.exists(path):
+def _get_budget_file_path(path: Optional[str]) -> str:
+    return path or BUDGETS_FILE
+
+
+def _ensure_budget_file(path: Optional[str] = None) -> None:
+    target = _get_budget_file_path(path)
+    if os.path.exists(target):
         return
     try:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as handle:
+        os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
             json.dump(_DEFAULT_BUDGETS, handle, indent=2, ensure_ascii=False)
-        log_info("Created default budget configuration at %s", path)
+        log_info("Created default budget configuration at %s", target)
     except OSError as exc:
         log_error("Failed to create default budgets: %s", exc)
 
 
-def load_budget_config(path: str = BUDGETS_FILE) -> Dict[str, Dict[str, Dict[str, float]]]:
-    _ensure_budget_file(path)
+def load_budget_config(path: Optional[str] = None) -> Dict[str, Dict[str, Dict[str, float]]]:
+    target = _get_budget_file_path(path)
+    _ensure_budget_file(target)
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(target, "r", encoding="utf-8") as handle:
             config = json.load(handle)
     except FileNotFoundError:
-        log_error("Budget file %s missing after ensure step", path)
+        log_error("Budget file %s missing after ensure step", target)
         return _DEFAULT_BUDGETS
     except json.JSONDecodeError as exc:
-        log_error("Budget file %s invalid JSON: %s", path, exc)
+        log_error("Budget file %s invalid JSON: %s", target, exc)
         return _DEFAULT_BUDGETS
     defaults = config.get("defaults", {})
     if "warn_at" not in defaults:
@@ -85,29 +91,31 @@ def _to_budget_limits(config: Dict[str, Dict[str, Dict[str, float]]]) -> Dict[st
     return budgets
 
 
-def get_budget_limits() -> Dict[str, BudgetLimit]:
-    config = load_budget_config()
+def get_budget_limits(path: Optional[str] = None) -> Dict[str, BudgetLimit]:
+    config = load_budget_config(path)
     return _to_budget_limits(config)
 
 
-def set_budget_limit(category: str, limit: float, warn_at: Optional[float] = None, path: str = BUDGETS_FILE) -> None:
+def set_budget_limit(category: str, limit: float, warn_at: Optional[float] = None, path: Optional[str] = None) -> None:
     """Create or update a monthly budget for a category and persist it.
     If warn_at is not provided, uses the default warn threshold from config or DEFAULT_BUDGET_WARN_THRESHOLD.
+    The path parameter is optional and defaults to BUDGETS_FILE.
     """
+    target = _get_budget_file_path(path)
     category_key = category.lower().strip()
     if not category_key:
         raise ValueError("category is required")
     if limit is None or float(limit) <= 0:
         raise ValueError("limit must be a positive number")
 
-    config = load_budget_config(path)
+    config = load_budget_config(target)
     defaults = config.get("defaults", {})
     if warn_at is None:
         warn_at = float(defaults.get("warn_at", DEFAULT_BUDGET_WARN_THRESHOLD))
     config.setdefault("monthly", {})[category_key] = {"limit": float(limit), "warn_at": float(warn_at)}
     try:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as handle:
+        os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
             json.dump(config, handle, indent=2, ensure_ascii=False)
         log_info("Set budget for %s: limit=%s warn_at=%s", category_key, limit, warn_at)
     except OSError as exc:
@@ -115,15 +123,19 @@ def set_budget_limit(category: str, limit: float, warn_at: Optional[float] = Non
         raise
 
 
-def remove_budget_limit(category: str, path: str = BUDGETS_FILE) -> bool:
+    """
+    Remove a monthly budget for category. Returns True if removed.
+    The 'path' parameter is optional and defaults to BUDGETS_FILE.
+    """
     """Remove a monthly budget for category. Returns True if removed."""
+    target = _get_budget_file_path(path)
     category_key = category.lower().strip()
-    config = load_budget_config(path)
+    config = load_budget_config(target)
     monthly = config.get("monthly", {})
     if category_key in monthly:
         monthly.pop(category_key)
         try:
-            with open(path, "w", encoding="utf-8") as handle:
+            with open(target, "w", encoding="utf-8") as handle:
                 json.dump(config, handle, indent=2, ensure_ascii=False)
             log_info("Removed budget for %s", category_key)
             return True

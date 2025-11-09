@@ -5,21 +5,17 @@ from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from config import CHART_DIR, DB_NAME, DATE_FORMAT
+from config import CHART_DIR
+from database import create_connection
 from logger import log_error
 
 def ensure_chart_dir() -> str:
     os.makedirs(CHART_DIR, exist_ok=True)
     return CHART_DIR
 
-def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
-
 def fetch_dataframe(query: str, params: tuple = ()) -> pd.DataFrame:
     try:
-        with get_connection() as conn:
+        with create_connection() as conn:
             df = pd.read_sql_query(query, conn, params=params)
         return df
     except sqlite3.Error as exc:
@@ -79,24 +75,3 @@ def generate_all_charts() -> Dict[str, Optional[str]]:
         "daily": plot_daily_bar(get_recent_daily_totals(7), "daily_bar.png"),
     }
     return charts
-
-def get_weekly_summary_text() -> str:
-    df = get_recent_daily_totals(7)
-    total = df["total"].sum() if not df.empty else 0
-    avg = total / len(df) if not df.empty else 0
-    return f"Weekly spend ₹{total:.2f} (daily avg ₹{avg:.2f})"
-
-def get_monthly_summary_text() -> str:
-    df = fetch_dataframe(
-        """
-        SELECT substr(date, 1, 7) AS month, COALESCE(SUM(amount), 0) AS total
-        FROM expenses
-        GROUP BY month
-        ORDER BY month DESC
-        LIMIT 1
-        """
-    )
-    if df.empty:
-        return "No monthly data yet."
-    row = df.iloc[0]
-    return f"{row['month']} total ₹{row['total']:.2f}"

@@ -2,17 +2,13 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from config import DB_NAME, DATE_FORMAT
+from config import DATE_FORMAT
+from database import create_connection
 from logger import log_error
-
-def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 def _fetch_single(query: str, params: Tuple = ()) -> float:
     try:
-        with get_connection() as conn:
+        with create_connection() as conn:
             cur = conn.execute(query, params)
             result = cur.fetchone()
             return float(result[0] or 0.0)
@@ -39,7 +35,7 @@ def get_monthly_total(year: Optional[int] = None, month: Optional[int] = None) -
 
 def get_expenses_by_category() -> List[Dict[str, float]]:
     try:
-        with get_connection() as conn:
+        with create_connection() as conn:
             cur = conn.execute(
                 """
                 SELECT category, COALESCE(SUM(amount), 0) AS total
@@ -56,7 +52,7 @@ def get_expenses_by_category() -> List[Dict[str, float]]:
 def get_daily_totals(days: int = 7) -> List[Dict[str, float]]:
     start = datetime.now() - timedelta(days=days - 1)
     try:
-        with get_connection() as conn:
+        with create_connection() as conn:
             cur = conn.execute(
                 """
                 SELECT date, COALESCE(SUM(amount), 0) AS total
