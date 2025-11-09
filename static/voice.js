@@ -35,6 +35,10 @@ if ("webkitSpeechRecognition" in window) {
     const data = await response.json();
     voiceStatus.textContent = data.reply || "Command processed.";
 
+    if (data.dashboard) {
+      window.dispatchEvent(new CustomEvent("voice-dashboard-update", { detail: data.dashboard }));
+    }
+
     // Optional: make it speak the reply
     if ("speechSynthesis" in window && data.reply) {
       const utter = new SpeechSynthesisUtterance(data.reply);

@@ -2,6 +2,7 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
+  "homepage": "/app",
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -19,6 +20,7 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
+  "proxy": "http://localhost:5000",
   "eslintConfig": {
     "extends": [
       "react-app",
@@ -42,5 +44,23 @@
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.3.4"
+  },
+  "overrides": {
+    "@babel/plugin-proposal-class-properties": "npm:@babel/plugin-transform-class-properties@^7.25.0",
+    "@babel/plugin-proposal-nullish-coalescing-operator": "npm:@babel/plugin-transform-nullish-coalescing-operator@^7.24.7",
+    "@babel/plugin-proposal-numeric-separator": "npm:@babel/plugin-transform-numeric-separator@^7.24.7",
+    "@babel/plugin-proposal-optional-chaining": "npm:@babel/plugin-transform-optional-chaining@^7.24.7",
+    "@babel/plugin-proposal-private-methods": "npm:@babel/plugin-transform-private-methods@^7.24.7",
+    "@babel/plugin-proposal-private-property-in-object": "npm:@babel/plugin-transform-private-property-in-object@^7.24.7",
+    "svgo": "2.8.0",
+    "css-select": "^4.3.0",
+    "nth-check": "^2.1.1",
+    "resolve-url-loader": "^5.0.0",
+    "react-scripts@5.0.1": {
+      "webpack-dev-server": "^4.15.2"
+    },
+    "@svgr/plugin-svgo": {
+      "svgo": "2.8.0"
+    }
   }
 }

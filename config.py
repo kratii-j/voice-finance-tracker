@@ -5,6 +5,8 @@ DB_NAME = "expenses.db"
 LOG_DIR = "logs"
 CHART_DIR = os.path.join("static", "charts")
 BUDGETS_FILE = "budgets.json"
+REACT_BUILD_DIR = os.path.join("frontend", "build")
+REACT_INDEX_FILE = os.path.join(REACT_BUILD_DIR, "index.html")
 
 # Default percentage of a budget that should trigger a warning
 DEFAULT_BUDGET_WARN_THRESHOLD = 0.8

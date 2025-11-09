@@ -123,26 +123,28 @@ def set_budget_limit(category: str, limit: float, warn_at: Optional[float] = Non
         raise
 
 
-    """
-    Remove a monthly budget for category. Returns True if removed.
-    The 'path' parameter is optional and defaults to BUDGETS_FILE.
-    """
-    """Remove a monthly budget for category. Returns True if removed."""
+def remove_budget_limit(category: str, path: Optional[str] = None) -> bool:
+    """Remove a monthly budget for the category. Returns True if removed."""
     target = _get_budget_file_path(path)
     category_key = category.lower().strip()
+    if not category_key:
+        raise ValueError("category is required")
+
     config = load_budget_config(target)
     monthly = config.get("monthly", {})
-    if category_key in monthly:
-        monthly.pop(category_key)
-        try:
-            with open(target, "w", encoding="utf-8") as handle:
-                json.dump(config, handle, indent=2, ensure_ascii=False)
-            log_info("Removed budget for %s", category_key)
-            return True
-        except OSError as exc:
-            log_error("Failed to persist budget removal: %s", exc)
-            raise
-    return False
+    if category_key not in monthly:
+        return False
+
+    monthly.pop(category_key, None)
+    try:
+        os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            json.dump(config, handle, indent=2, ensure_ascii=False)
+        log_info("Removed budget for %s", category_key)
+        return True
+    except OSError as exc:
+        log_error("Failed to persist budget removal: %s", exc)
+        raise
 
 
 def format_budget_summary(year: Optional[int] = None, month: Optional[int] = None) -> str:

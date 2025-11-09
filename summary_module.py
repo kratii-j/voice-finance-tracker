@@ -33,17 +33,33 @@ def get_monthly_total(year: Optional[int] = None, month: Optional[int] = None) -
         (start.strftime(DATE_FORMAT), end.strftime(DATE_FORMAT)),
     )
 
-def get_expenses_by_category() -> List[Dict[str, float]]:
+def get_expenses_by_category(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    *,
+    end_inclusive: bool = True,
+) -> List[Dict[str, float]]:
     try:
         with create_connection() as conn:
-            cur = conn.execute(
-                """
+            conditions: List[str] = []
+            params: List[str] = []
+            if start_date:
+                conditions.append("date >= ?")
+                params.append(start_date)
+            if end_date:
+                comparator = "<=" if end_inclusive else "<"
+                conditions.append(f"date {comparator} ?")
+                params.append(end_date)
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"""
                 SELECT category, COALESCE(SUM(amount), 0) AS total
                 FROM expenses
+                {where_clause}
                 GROUP BY category
                 ORDER BY total DESC
-                """
-            )
+            """
+            cur = conn.execute(query, params)
             return [dict(row) for row in cur.fetchall()]
     except sqlite3.Error as exc:
         log_error("Category breakdown error: %s", exc)
@@ -72,7 +88,10 @@ def get_weekly_summary_text() -> str:
     totals = get_daily_totals(days=7)
     total_amount = sum(row["total"] for row in totals)
     avg = total_amount / 7 if totals else 0
-    top_categories = get_expenses_by_category()[:3]
+    today = datetime.now()
+    start = (today - timedelta(days=6)).strftime(DATE_FORMAT)
+    end = today.strftime(DATE_FORMAT)
+    top_categories = get_expenses_by_category(start, end)[:3]
     lines = [
         f"Weekly spend: ₹{total_amount:.2f}",
         f"Daily average: ₹{avg:.2f}",
@@ -85,7 +104,16 @@ def get_weekly_summary_text() -> str:
 def get_monthly_summary_text() -> str:
     now = datetime.now()
     total = get_monthly_total(now.year, now.month)
-    cat_breakdown = get_expenses_by_category()
+    start = datetime(now.year, now.month, 1)
+    if now.month == 12:
+        next_month = datetime(now.year + 1, 1, 1)
+    else:
+        next_month = datetime(now.year, now.month + 1, 1)
+    cat_breakdown = get_expenses_by_category(
+        start.strftime(DATE_FORMAT),
+        next_month.strftime(DATE_FORMAT),
+        end_inclusive=False,
+    )
     lines = [f"{now.strftime('%B %Y')} total: ₹{total:.2f}"]
     if cat_breakdown:
         cats = ", ".join(f"{c['category']} (₹{c['total']:.0f})" for c in cat_breakdown[:5])

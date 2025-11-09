@@ -2,6 +2,11 @@ import os
 import sqlite3
 from typing import Dict, List, Optional
 
+import matplotlib
+# Use a non-interactive backend to avoid importing TK/Tcl GUI toolkits on servers
+# which can cause runtime errors like "Can't find a usable tk.tcl" when matplotlib
+# tries to initialize a GUI backend. Agg is suitable for writing files (PNG).
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -68,6 +73,19 @@ def get_recent_daily_totals(days: int = 7) -> pd.DataFrame:
     """
     offset = f"-{days - 1} day"
     return fetch_dataframe(query, (offset,))
+
+def get_monthly_totals_by_month(months: int = 6) -> pd.DataFrame:
+    df = fetch_dataframe(
+        """
+        SELECT strftime('%Y-%m', date) AS month, COALESCE(SUM(amount), 0) AS total
+        FROM expenses
+        GROUP BY strftime('%Y-%m', date)
+        ORDER BY month
+        """
+    )
+    if months and not df.empty:
+        df = df.tail(months)
+    return df.reset_index(drop=True)
 
 def generate_all_charts() -> Dict[str, Optional[str]]:
     charts: Dict[str, Optional[str]] = {

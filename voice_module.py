@@ -15,18 +15,37 @@ import speech_recognition as sr
 from scipy.io.wavfile import write
 from word2number import w2n
 
-recognizer = sr.Recognizer()
-engine = pyttsx3.init()
+# Lazy-initialized audio engine and recognizer to avoid import-time side-effects
+_engine = None
+_recognizer = None
 
-voices = engine.getProperty("voices")
-for voice in voices:
-    name = voice.name.lower()
-    if "zira" in name or "female" in name:
-        engine.setProperty("voice", voice.id)
-        break
+def _get_engine():
+    global _engine
+    if _engine is not None:
+        return _engine
+    try:
+        _engine = pyttsx3.init()
+        voices = _engine.getProperty("voices")
+        for voice in voices:
+            name = getattr(voice, "name", "").lower()
+            if "zira" in name or "female" in name:
+                _engine.setProperty("voice", voice.id)
+                break
+        _engine.setProperty("rate", 170)
+        _engine.setProperty("volume", 1.0)
+    except Exception:
+        _engine = None
+    return _engine
 
-engine.setProperty("rate", 170)
-engine.setProperty("volume", 1.0)
+def _get_recognizer():
+    global _recognizer
+    if _recognizer is not None:
+        return _recognizer
+    try:
+        _recognizer = sr.Recognizer()
+    except Exception:
+        _recognizer = None
+    return _recognizer
 
 _AMOUNT_CONTEXT_WORDS = {
     "add","added","adding",
@@ -454,8 +473,16 @@ def speak(text: str, tone: str = "neutral") -> None:
     tone = tone or "neutral"
     prefix = random.choice(_TONE_RESPONSES.get(tone, [""]))
     utterance = f"{prefix} {text}" if prefix else text
-    engine.say(utterance)
-    engine.runAndWait()
+    engine = _get_engine()
+    if engine:
+        try:
+            engine.say(utterance)
+            engine.runAndWait()
+        except Exception:
+            # Fall back to printing if audio playback fails
+            print(utterance)
+    else:
+        print(utterance)
     if len(utterance.split()) > 12:
         time.sleep(0.4)
 
@@ -498,7 +525,10 @@ def get_voice_input(
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_filename = tmp.name
             write(tmp_filename, fs, recording)
-
+            recognizer = _get_recognizer()
+            if not recognizer:
+                speak("Voice recognition unsupported in this environment.", tone="error")
+                return ""
             with sr.AudioFile(tmp_filename) as source:
                 audio = recognizer.record(source)
 

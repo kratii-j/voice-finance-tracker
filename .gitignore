@@ -4,10 +4,55 @@ __pycache__/
 
 # Database and Environment
 expenses.db
+# Python Caching
+__pycache__/
+*.pyc
+
+# Database and Environment
+expenses.db
 venv/
+
+# Optional virtual env variations
+.venv/
 
 # Logs
 logs/
 
 # Generated Charts/Images
 static/charts/*.png
+
+# Frontend build artifacts
+frontend/build/
+
+# Frontend dependencies
+frontend/node_modules/
+
+# Local SQLite DB
+expenses.db
+
+# VS Code workspace settings (optional)
+.vscode/
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editor / OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+
+# Python packaging / caches
+.mypy_cache/
+pip-wheel-metadata/
+*.egg-info/
+
+# node/npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
