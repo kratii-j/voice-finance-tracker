@@ -8,11 +8,8 @@ from typing import Any, Dict, Optional
 
 import dateparser
 from dateparser.search import search_dates
-import numpy as np
-import pyttsx3
-import sounddevice as sd
-import speech_recognition as sr
-from scipy.io.wavfile import write
+# Heavy audio and numeric libraries are imported lazily inside the functions
+# that need them to avoid import-time side-effects when only parsing text.
 from word2number import w2n
 
 # Lazy-initialized audio engine and recognizer to avoid import-time side-effects
@@ -24,6 +21,9 @@ def _get_engine():
     if _engine is not None:
         return _engine
     try:
+        # import locally to avoid top-level dependency on audio libraries
+        import pyttsx3
+
         _engine = pyttsx3.init()
         voices = _engine.getProperty("voices")
         for voice in voices:
@@ -42,6 +42,9 @@ def _get_recognizer():
     if _recognizer is not None:
         return _recognizer
     try:
+        # import speech_recognition lazily
+        import speech_recognition as sr
+
         _recognizer = sr.Recognizer()
     except Exception:
         _recognizer = None
@@ -244,7 +247,25 @@ _SHOW_BUDGETS_PATTERNS = [
     r"\bbudget status\b",
     r"\bshow my budgets\b",
     r"\bwhat'?s my budget\b",
+    r"\bhow much\b.*\b(?:left|remaining)\b.*\bbudget\b",
+    r"\bremaining\b.*\bbudget\b",
 ]
+
+_REMOVE_BUDGET_PATTERNS = [
+    r"\b(remove|delete|clear|cancel)\b.*\bbudget\b",
+    r"\bbudget\b.*\b(remove|delete|clear|cancel)\b",
+    r"\bno more\b.*\bbudget\b",
+]
+
+_CHART_SUMMARY_PATTERNS = [
+    r"\bchart(?:s)?\b.*\b(?:summary|recap|overview|breakdown)\b",
+    r"\b(?:graph|graphs|visuals?)\b.*\b(?:summary|recap)\b",
+    r"\bchart recap\b",
+    r"\bshow\b.*\bcharts\b",
+]
+
+_WARN_TRIGGER_PATTERN = re.compile(r"(warn|alert|notify|remind)[^.,;]*")
+_WARN_PERCENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(?:percent|%)")
 
 def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
@@ -335,6 +356,26 @@ def _extract_amount(text: str) -> Optional[float]:
     if numeric is not None:
         return numeric
     return _extract_word_amount(text)
+
+
+def _extract_warn_ratio(text: str) -> Optional[float]:
+    lowered = text.lower()
+    trigger = _WARN_TRIGGER_PATTERN.search(lowered)
+    if trigger:
+        search_space = lowered[trigger.start() :]
+    else:
+        search_space = lowered
+    match = _WARN_PERCENT_PATTERN.search(search_space)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    if value > 1:
+        value = value / 100.0
+    value = max(0.0, min(value, 1.0))
+    return value
 
 
 def _category_from_text(fragment: str) -> Optional[str]:
@@ -433,6 +474,10 @@ def _detect_action(text: str, has_amount: bool, has_category: bool) -> Optional[
         return "set_budget"
     if any(re.search(p, text) for p in _SHOW_BUDGETS_PATTERNS):
         return "show_budgets"
+    if any(re.search(p, text) for p in _REMOVE_BUDGET_PATTERNS):
+        return "remove_budget"
+    if any(re.search(p, text) for p in _CHART_SUMMARY_PATTERNS):
+        return "chart_summary"
 
     for action, patterns in _ACTION_PATTERNS.items():
         if any(re.search(pattern, text) for pattern in patterns):
@@ -500,7 +545,11 @@ def respond(action: str, message: str) -> None:
     }
     speak(message, tone=tone_map.get(action, "neutral"))
 
-def _record_audio(duration: float, fs: int) -> np.ndarray:
+def _record_audio(duration: float, fs: int) -> Any:
+    # import heavy libs locally
+    import sounddevice as sd
+    import numpy as np
+
     recording = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype="int16")
     sd.wait()
     recording = np.asarray(recording)
@@ -524,11 +573,15 @@ def get_voice_input(
             recording = _record_audio(duration, fs)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_filename = tmp.name
+            # import write and sounddevice locally
+            from scipy.io.wavfile import write
             write(tmp_filename, fs, recording)
+            # ensure recognizer and speech_recognition are available
             recognizer = _get_recognizer()
             if not recognizer:
                 speak("Voice recognition unsupported in this environment.", tone="error")
                 return ""
+            import speech_recognition as sr
             with sr.AudioFile(tmp_filename) as source:
                 audio = recognizer.record(source)
 
@@ -537,19 +590,22 @@ def get_voice_input(
             print("Heard:", transcript)
             last_transcript = transcript
             return transcript.lower()
-        except sr.UnknownValueError:
-            speak("Sorry, I did not catch that.", tone="error")
-        except sr.RequestError as exc:
-            speak("Speech service unavailable.", tone="error")
-            print("Speech service error:", exc)
-            break
-        except sd.PortAudioError as exc:
-            speak("Microphone error. Please check the device.", tone="error")
-            print("Microphone error:", exc)
-            break
         except Exception as exc:
-            speak("I hit an unexpected problem.", tone="error")
-            print("Voice input error:", exc)
+            # Try to classify common audio exceptions for friendlier messages
+            name = exc.__class__.__name__ if exc else ""
+            if name == "UnknownValueError":
+                speak("Sorry, I did not catch that.", tone="error")
+                continue
+            if name == "RequestError":
+                speak("Speech service unavailable.", tone="error")
+                print("Speech service error:", exc)
+                break
+            if name == "PortAudioError":
+                speak("Microphone error. Please check the device.", tone="error")
+                print("Microphone error:", exc)
+                break
+                speak("I hit an unexpected problem.", tone="error")
+                print("Voice input error:", exc)
         finally:
             if tmp_filename and os.path.exists(tmp_filename):
                 try:
@@ -588,10 +644,12 @@ def parse_expense(text: str) -> Dict[str, Any]:
 
     if action == "set_budget":
         # Return parsed amount (may be None) and detected category (or None if uncategorized)
+        warn_ratio = _extract_warn_ratio(normalized_text)
         return {
             "action": "set_budget",
             "amount": amount,
             "category": None if category == "uncategorized" else category,
+            "warn_ratio": warn_ratio,
         }
 
     if action == "show_budgets":
@@ -599,6 +657,15 @@ def parse_expense(text: str) -> Dict[str, Any]:
             "action": "show_budgets",
             "category": None if category == "uncategorized" else category,
         }
+
+    if action == "remove_budget":
+        return {
+            "action": "remove_budget",
+            "category": None if category == "uncategorized" else category,
+        }
+
+    if action == "chart_summary":
+        return {"action": "chart_summary"}
 
     return {"action": action}
 

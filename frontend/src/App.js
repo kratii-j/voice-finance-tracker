@@ -531,11 +531,51 @@ const VoiceFinanceDashboard = () => {
       recognition.stop();
       return;
     }
-    try {
-      recognition.start();
-    } catch (err) {
-      setVoiceStatus('Unable to access the microphone. Please allow access and try again.');
-    }
+    // Speak a short prompt so the user knows to speak, then start recognition.
+    const speakPrompt = (text) => {
+      return new Promise((resolve) => {
+        try {
+          if (!('speechSynthesis' in window)) {
+            resolve();
+            return;
+          }
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.onend = () => resolve();
+          utter.onerror = () => resolve();
+          // prefer a neutral voice/rate
+          utter.lang = 'en-IN';
+          utter.rate = 1;
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+        } catch (e) {
+          // If anything goes wrong, just resolve and continue
+          resolve();
+        }
+      });
+    };
+
+    // Use a short prompt. Start recognition after the prompt finishes.
+    setVoiceStatus('Preparing to listen...');
+    speakPrompt('Listening now. Please speak after the prompt.')
+      .then(() => {
+        try {
+          recognition.start();
+        } catch (err) {
+          // fallback: try to start immediately (some browsers require immediate user gesture)
+          try {
+            recognition.start();
+          } catch (e) {
+            setVoiceStatus('Unable to access the microphone. Please allow access and try again.');
+          }
+        }
+      })
+      .catch(() => {
+        try {
+          recognition.start();
+        } catch (err) {
+          setVoiceStatus('Unable to access the microphone. Please allow access and try again.');
+        }
+      });
   };
 
   const toggleSection = (section) => {

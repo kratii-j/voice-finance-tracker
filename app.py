@@ -1,15 +1,18 @@
 import os
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from budget_module import (
+    BudgetLimit,
+    BudgetStatus,
     evaluate_monthly_budgets,
-    format_budget_summary,
     get_alert_for_category,
     get_budget_limits,
+    remove_budget_limit,
+    set_budget_limit,
     summarize_alerts,
 )
 from config import DATE_FORMAT, REACT_BUILD_DIR, REACT_INDEX_FILE
@@ -320,6 +323,98 @@ def _serialize_budget_status(statuses):
     return [asdict(status) for status in statuses]
 
 
+def _humanize_category_name(category: str) -> str:
+    if not category:
+        return "General"
+    return str(category).replace("_", " ").title()
+
+
+def _format_budget_status_line(status: BudgetStatus, limit_info: Optional[BudgetLimit]) -> str:
+    name = _humanize_category_name(status.category)
+    pct_used = status.percentage * 100
+    summary = (
+        f"{name}: ₹{status.spent:.0f} of ₹{status.limit:.0f} used "
+        f"({pct_used:.0f}%); ₹{status.remaining:.0f} remaining."
+    )
+    detail = status.message if status.level in {"warning", "critical"} else "Budget is on track."
+    if limit_info is not None:
+        detail += f" Alerts at {int(round(limit_info.warn_ratio * 100))}%"
+    return f"{summary} {detail}.".replace("..", ".")
+
+
+def _collect_budget_lines(statuses: List[BudgetStatus], limits: Dict[str, BudgetLimit]) -> List[str]:
+    return [
+        _format_budget_status_line(status, limits.get(status.category))
+        for status in statuses
+    ]
+
+
+def _find_budget_status(category: str, statuses: List[BudgetStatus]) -> Optional[BudgetStatus]:
+    category_key = category.lower()
+    for status in statuses:
+        if status.category == category_key:
+            return status
+    return None
+
+
+def _summarize_chart_series(series: Dict[str, Any]) -> str:
+    lines: List[str] = []
+    breakdown = series.get("category_breakdown") or []
+    if breakdown:
+        top = max(breakdown, key=lambda item: float(item.get("total", 0.0)))
+        top_name = _humanize_category_name(top.get("category"))
+        top_total = float(top.get("total", 0.0))
+        lines.append(f"Top category is {top_name} at ₹{top_total:.0f}.")
+        if len(breakdown) >= 2:
+            ordered = sorted(breakdown, key=lambda item: float(item.get("total", 0.0)), reverse=True)
+            runner_up = ordered[1]
+            gap = top_total - float(runner_up.get("total", 0.0))
+            if gap > 0:
+                lines.append(
+                    f"That's ₹{gap:.0f} ahead of {_humanize_category_name(runner_up.get('category'))}."
+                )
+
+    daily = series.get("daily_totals") or []
+    if daily:
+        daily_totals = [float(item.get("total", 0.0)) for item in daily]
+        if daily_totals:
+            average = sum(daily_totals) / len(daily_totals)
+            latest = daily[-1]
+            latest_label = latest.get("label") or latest.get("date")
+            latest_total = float(latest.get("total", 0.0))
+            lines.append(
+                f"Last {len(daily)} day average is ₹{average:.0f}; latest {latest_label} at ₹{latest_total:.0f}."
+            )
+            peak_index = max(range(len(daily_totals)), key=lambda idx: daily_totals[idx])
+            peak_item = daily[peak_index]
+            if peak_item is not latest:
+                peak_label = peak_item.get("label") or peak_item.get("date")
+                lines.append(f"Peak day was {peak_label} with ₹{daily_totals[peak_index]:.0f}.")
+
+    monthly = series.get("monthly_totals") or []
+    if len(monthly) >= 2:
+        current = monthly[-1]
+        previous = monthly[-2]
+        current_total = float(current.get("total", 0.0))
+        previous_total = float(previous.get("total", 0.0))
+        diff = current_total - previous_total
+        if abs(diff) >= 1:
+            direction = "up" if diff > 0 else "down"
+            if previous_total > 0:
+                percent = abs(diff) / previous_total * 100
+                lines.append(
+                    f"Monthly spend is {direction} by ₹{abs(diff):.0f} ({percent:.0f}%) versus the prior month."
+                )
+            else:
+                lines.append(
+                    f"Monthly spend is {direction} by ₹{abs(diff):.0f} compared to the prior month."
+                )
+
+    if not lines:
+        return "Not enough data for a chart recap yet."
+    return " ".join(lines)
+
+
 @app.route("/api/voice_command", methods=["POST"])
 def api_voice_command():
     payload: Dict[str, Any] = request.get_json(silent=True) or {}
@@ -432,36 +527,152 @@ def api_voice_command():
 
     if action == "monthly":
         summary_text = get_monthly_summary_text()
+        statuses = evaluate_monthly_budgets()
+        limits = get_budget_limits()
+        if statuses:
+            lines = _collect_budget_lines(statuses, limits)
+            summary_text = summary_text + "\n" + "\n".join(lines)
+            response["budget_statuses"] = _serialize_budget_status(statuses)
+            response["budget_lines"] = lines
         response["reply"] = summary_text
-        response["budget_statuses"] = _serialize_budget_status(evaluate_monthly_budgets())
         return jsonify(response)
 
     if action == "show_budgets":
         category = parsed.get("category")
+        limits = get_budget_limits()
+        statuses = evaluate_monthly_budgets()
         if category:
-            status = get_alert_for_category(category)
+            status = _find_budget_status(category, statuses)
+            limit_info = limits.get(category.lower()) if category else None
+            human_name = _humanize_category_name(category)
             if status:
-                response["reply"] = status.message
+                line = _format_budget_status_line(status, limit_info)
+                response["reply"] = line
                 response["budget_status"] = asdict(status)
+            elif limit_info:
+                warn_percent = int(round(limit_info.warn_ratio * 100))
+                response["reply"] = (
+                    f"{human_name} budget is ₹{limit_info.limit:.0f} per month with alerts at {warn_percent}%."
+                )
+                response["budget_limit"] = {
+                    "category": limit_info.category,
+                    "limit": limit_info.limit,
+                    "warn_ratio": limit_info.warn_ratio,
+                }
             else:
-                limits = get_budget_limits()
-                limit = limits.get(category.lower()) if category else None
-                if limit:
-                    response["reply"] = f"{category} budget is ₹{limit.limit:.0f} per month."
-                    response["budget_limit"] = {
-                        "category": limit.category,
-                        "limit": limit.limit,
-                        "warn_ratio": limit.warn_ratio,
-                    }
-                else:
-                    response["reply"] = f"No budget configured for {category}."
+                response["reply"] = f"No budget configured for {human_name}."
+            if statuses:
+                response["budget_statuses"] = _serialize_budget_status(statuses)
         else:
-            response["reply"] = format_budget_summary() or "No budgets configured."
-            response["budget_statuses"] = _serialize_budget_status(evaluate_monthly_budgets())
+            if statuses:
+                lines = _collect_budget_lines(statuses, limits)
+                response["reply"] = "\n".join(lines)
+                response["budget_statuses"] = _serialize_budget_status(statuses)
+                response["budget_lines"] = lines
+            else:
+                response["reply"] = "No budgets configured."
         return jsonify(response)
 
     if action == "set_budget":
-        response["reply"] = "Setting budgets from the web assistant is not available yet."
+        category = parsed.get("category")
+        amount = parsed.get("amount")
+        warn_ratio = parsed.get("warn_ratio")
+        if not category:
+            response["reply"] = "Please specify which category the budget should apply to."
+            return jsonify(response), 400
+        try:
+            limit_value = float(amount) if amount is not None else None
+        except (TypeError, ValueError):
+            limit_value = None
+        if limit_value is None or limit_value <= 0:
+            response["reply"] = "Please provide a positive budget amount."
+            return jsonify(response), 400
+        try:
+            set_budget_limit(category, limit_value, warn_at=warn_ratio if warn_ratio is not None else None)
+            log_info(
+                "Voice set budget for category=%s amount=%s warn_ratio=%s",
+                category,
+                limit_value,
+                warn_ratio,
+            )
+        except ValueError as exc:
+            response["reply"] = str(exc)
+            return jsonify(response), 400
+        except Exception as exc:
+            log_error("Voice set budget failed: %s", exc)
+            response["reply"] = "Failed to update that budget."
+            return jsonify(response), 500
+        limits = get_budget_limits()
+        limit_info = limits.get(category.lower())
+        statuses = evaluate_monthly_budgets()
+        status = _find_budget_status(category, statuses)
+        if status:
+            lines = _collect_budget_lines([status], limits)
+            response["reply"] = lines[0]
+            response["budget_status"] = asdict(status)
+        elif limit_info:
+            warn_percent = int(round(limit_info.warn_ratio * 100))
+            human_name = _humanize_category_name(category)
+            response["reply"] = (
+                f"Set {human_name} budget to ₹{limit_info.limit:.0f} with alerts at {warn_percent}%."
+            )
+        else:
+            human_name = _humanize_category_name(category)
+            response["reply"] = f"Set {human_name} budget to ₹{limit_value:.0f}."
+        if statuses:
+            response["budget_statuses"] = _serialize_budget_status(statuses)
+            response["budget_lines"] = _collect_budget_lines(statuses, limits)
+        if limit_info:
+            response["budget_limit"] = {
+                "category": limit_info.category,
+                "limit": limit_info.limit,
+                "warn_ratio": limit_info.warn_ratio,
+            }
+        if warn_ratio is not None:
+            response["warn_ratio"] = warn_ratio
+        return jsonify(response)
+
+    if action == "remove_budget":
+        category = parsed.get("category")
+        if not category:
+            response["reply"] = "Please tell me which budget to remove."
+            return jsonify(response), 400
+        try:
+            removed = remove_budget_limit(category)
+            log_info("Voice remove budget for category=%s removed=%s", category, removed)
+        except ValueError as exc:
+            response["reply"] = str(exc)
+            return jsonify(response), 400
+        except Exception as exc:
+            log_error("Voice remove budget failed: %s", exc)
+            response["reply"] = "Failed to remove that budget."
+            return jsonify(response), 500
+        human_name = _humanize_category_name(category)
+        if not removed:
+            response["reply"] = f"No budget configured for {human_name}."
+            return jsonify(response)
+        limits = get_budget_limits()
+        statuses = evaluate_monthly_budgets()
+        lines = _collect_budget_lines(statuses, limits) if statuses else []
+        if lines:
+            response["reply"] = f"Removed {human_name} budget. " + " ".join(lines)
+        else:
+            response["reply"] = f"Removed {human_name} budget. No budgets remain."
+        if statuses:
+            response["budget_statuses"] = _serialize_budget_status(statuses)
+            response["budget_lines"] = lines
+        response["removed_budget"] = category.lower()
+        return jsonify(response)
+
+    if action == "chart_summary":
+        try:
+            series = _build_chart_series()
+        except Exception as exc:
+            log_error("Voice chart summary failed: %s", exc)
+            response["reply"] = "Chart data is unavailable right now."
+            return jsonify(response), 500
+        response["chart_series"] = series
+        response["reply"] = _summarize_chart_series(series)
         return jsonify(response)
 
     response["reply"] = "That command is not supported yet."

@@ -99,6 +99,23 @@ def get_weekly_summary_text() -> str:
     if top_categories:
         cats = ", ".join(f"{c['category']} (₹{c['total']:.0f})" for c in top_categories)
         lines.append(f"Top categories: {cats}")
+    if totals:
+        peak_entry = max(totals, key=lambda row: row["total"])
+        try:
+            peak_date = datetime.strptime(peak_entry["date"], DATE_FORMAT)
+            peak_label = peak_date.strftime("%a")
+        except (TypeError, ValueError):
+            peak_label = str(peak_entry["date"])
+        lines.append(f"Peak day: {peak_label} at ₹{peak_entry['total']:.0f}.")
+        if len(totals) >= 2:
+            first_total = totals[0]["total"]
+            last_total = totals[-1]["total"]
+            change = last_total - first_total
+            if abs(change) >= 1:
+                direction = "up" if change > 0 else "down"
+                lines.append(
+                    f"Trend: {direction} by ₹{abs(change):.0f} compared to the start of the week."
+                )
     return "\n".join(lines)
 
 def get_monthly_summary_text() -> str:
@@ -115,7 +132,47 @@ def get_monthly_summary_text() -> str:
         end_inclusive=False,
     )
     lines = [f"{now.strftime('%B %Y')} total: ₹{total:.2f}"]
+    days_elapsed = max((now.date() - start.date()).days + 1, 1)
+    avg_daily = total / days_elapsed if days_elapsed else 0
+    lines.append(f"Daily average so far: ₹{avg_daily:.2f}")
     if cat_breakdown:
         cats = ", ".join(f"{c['category']} (₹{c['total']:.0f})" for c in cat_breakdown[:5])
         lines.append(f"Leading categories: {cats}")
+    daily_rows: List[Dict[str, float]] = []
+    try:
+        with create_connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT date, COALESCE(SUM(amount), 0) AS total
+                FROM expenses
+                WHERE date >= ? AND date < ?
+                GROUP BY date
+                ORDER BY date
+                """,
+                (start.strftime(DATE_FORMAT), next_month.strftime(DATE_FORMAT)),
+            )
+            daily_rows = [dict(row) for row in cur.fetchall()]
+    except sqlite3.Error as exc:
+        log_error("Monthly daily totals error: %s", exc)
+    if daily_rows:
+        peak_entry = max(daily_rows, key=lambda row: row["total"])
+        try:
+            peak_date = datetime.strptime(peak_entry["date"], DATE_FORMAT)
+            peak_label = peak_date.strftime("%d %b")
+        except (TypeError, ValueError):
+            peak_label = str(peak_entry["date"])
+        lines.append(f"Peak day: {peak_label} at ₹{peak_entry['total']:.0f}.")
+    prev_year = start.year
+    prev_month = start.month - 1
+    if prev_month == 0:
+        prev_month = 12
+        prev_year -= 1
+    prev_total = get_monthly_total(prev_year, prev_month)
+    if prev_total > 0:
+        diff = total - prev_total
+        direction = "higher" if diff >= 0 else "lower"
+        percent = abs(diff) / prev_total * 100
+        lines.append(
+            f"Change vs last month: {direction} by ₹{abs(diff):.0f} ({percent:.0f}%)."
+        )
     return "\n".join(lines)
