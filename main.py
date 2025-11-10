@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from budget_module import (
     evaluate_monthly_budgets,
@@ -18,6 +18,7 @@ from voice_module import (
     respond,
     speak,
 )
+from visual_module import generate_all_charts
 from database import (
     add_expense,
     create_table,
@@ -59,7 +60,6 @@ def _speak_recent(items: List[dict]) -> None:
 
 
 def main() -> None:
-    # ensure DB schema exists
     create_table()
 
     speak("Voice tracker ready. Say a command or stop to quit.")
@@ -67,6 +67,7 @@ def main() -> None:
     attempts = 0
 
     previous_command: Optional[Dict] = None
+    previous_parsed: Optional[Dict[str, Any]] = None
     while attempts < MAX_ATTEMPTS:
         user_text = get_voice_input(duration=5)
 
@@ -79,25 +80,27 @@ def main() -> None:
         command = parse_expense(user_text)
         action = command.get("action", "unknown")
 
-        # If user asked to repeat, replace current command with the last executed one
         if action == "repeat":
-            if previous_command:
+            # Prefer the full parsed command (previous_parsed) if available,
+            # fall back to the older lightweight previous_command for safety.
+            if previous_parsed:
                 respond("info", "Repeating the last command.")
-                # reuse previous_command (do not overwrite previous_command yet)
+                command = previous_parsed.copy()
+                action = command.get("action", "unknown")
+            elif previous_command:
+                respond("info", "Repeating the last command.")
                 command = previous_command.copy()
                 action = command.get("action", "unknown")
             else:
                 respond("repeat", "No previous command available.")
                 continue
 
-        # Handle actions
         if action == "exit":
             respond("info", "Goodbye. Stopping the tracker.")
             break
 
         if action == "help":
             show_help()
-            # do not record help as previous actionable command
             continue
 
         if action == "add":
@@ -105,7 +108,6 @@ def main() -> None:
             category = command.get("category", "uncategorized")
             expense_date = command.get("date")
             description = command.get("description")
-            # slot filling for amount
             if amount is None:
                 amount = confirm_amount_flow()
                 if amount is None:
@@ -114,8 +116,8 @@ def main() -> None:
             try:
                 expense_id = add_expense(amount, category, date=expense_date, description=description)
                 respond("add", f"Added ₹{amount} to {category}. Entry number {expense_id}.")
-                # record this successful command for potential repeat
                 previous_command = {"action": "add", "amount": amount, "category": category}
+                previous_parsed = command.copy()
                 alert_year: Optional[int] = None
                 alert_month: Optional[int] = None
                 if expense_date:
@@ -132,7 +134,6 @@ def main() -> None:
                 respond("error", "Failed to add the expense.")
             continue
 
-        # Set a monthly budget via voice
         if action == "set_budget":
             amount = command.get("amount")
             category = command.get("category") or "uncategorized"
@@ -145,11 +146,11 @@ def main() -> None:
                 set_budget_limit(category, float(amount))
                 respond("info", f"Budget set: ₹{float(amount):.0f} per month for {category}.")
                 previous_command = {"action": "set_budget", "amount": float(amount), "category": category}
+                previous_parsed = command.copy()
             except Exception:
                 respond("error", "Failed to set budget.")
             continue
 
-        # Show budgets summary or a specific category budget status
         if action == "show_budgets":
             category = command.get("category")
             if category:
@@ -167,24 +168,45 @@ def main() -> None:
                 summary = format_budget_summary()
                 respond("info", summary)
             previous_command = {"action": "show_budgets", "category": category} if category else {"action": "show_budgets"}
+            previous_parsed = command.copy()
+            continue
+
+        if action == "remove_budget":
+            category = command.get("category")
+            if not category:
+                respond("error", "Please specify which budget to remove.")
+                continue
+            try:
+                removed = remove_budget_limit(category)
+                if removed:
+                    respond("info", f"Removed budget for {category}.")
+                else:
+                    respond("info", f"No budget configured for {category}.")
+                previous_command = {"action": "remove_budget", "category": category}
+                previous_parsed = command.copy()
+            except Exception:
+                respond("error", "Failed to remove budget.")
             continue
 
         if action == "balance":
             total = get_total_today()
             respond("balance", f"Today's total spend is ₹{total:.2f}.")
             previous_command = {"action": "balance"}
+            previous_parsed = command.copy()
             continue
 
         if action == "recent":
             recent = get_recent_expenses(5)
             _speak_recent(recent)
             previous_command = {"action": "recent"}
+            previous_parsed = command.copy()
             continue
 
         if action == "weekly":
             summary = get_weekly_summary_text()
             respond("weekly", summary)
             previous_command = {"action": "weekly"}
+            previous_parsed = command.copy()
             continue
 
         if action == "monthly":
@@ -196,6 +218,19 @@ def main() -> None:
                 elif status.level == "critical":
                     speak(status.message, tone="error")
             previous_command = {"action": "monthly"}
+            previous_parsed = command.copy()
+            continue
+
+        if action == "chart_summary":
+            try:
+                charts = generate_all_charts()
+                # For voice, we don't send file paths; just inform the user that
+                # charts were generated and saved to the chart directory.
+                respond("info", "Charts generated and saved.")
+                previous_command = {"action": "chart_summary"}
+                previous_parsed = command.copy()
+            except Exception as exc:
+                respond("error", "Failed to generate charts.")
             continue
 
         if action == "delete":
@@ -203,6 +238,7 @@ def main() -> None:
             if removed:
                 respond("delete", f"Deleted expense number {removed}.")
                 previous_command = {"action": "delete"}
+                previous_parsed = command.copy()
             else:
                 respond("delete", "No expense to delete.")
             continue

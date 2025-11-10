@@ -36,9 +36,8 @@ from visual_module import (
     get_recent_daily_totals,
 )
 from logger import log_error, log_info
-# Defer importing heavy voice/audio-related code until it's needed to avoid
-# import-time side-effects (pyttsx3, speech_recognition, sounddevice).
 parse_expense = None
+last_performed_command: Optional[Dict[str, Any]] = None
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)  # allow frontend dev server to reach the API
@@ -56,17 +55,14 @@ VOICE_HELP_TEXT = (
     "- Stop to exit"
 )
 
-
 def _to_static_path(path: Optional[str]) -> Optional[str]:
     if not path:
         return None
     rel = os.path.relpath(path, "static")
     return rel.replace(os.sep, "/")
 
-
 def _react_build_exists() -> bool:
     return os.path.isfile(REACT_INDEX_FILE)
-
 
 def _serve_react_asset(path: Optional[str] = None):
     if not _react_build_exists():
@@ -78,7 +74,6 @@ def _serve_react_asset(path: Optional[str] = None):
             return send_from_directory(REACT_BUILD_DIR, relative_path)
     return send_from_directory(REACT_BUILD_DIR, "index.html")
 
-
 def _serialize_category_breakdown() -> Dict[str, Any]:
     df = get_category_breakdown()
     if df.empty:
@@ -88,7 +83,6 @@ def _serialize_category_breakdown() -> Dict[str, Any]:
         for _, row in df.iterrows()
     ]
     return {"items": items}
-
 
 def _serialize_daily_totals(days: int = 7) -> Dict[str, Any]:
     df = get_recent_daily_totals(days)
@@ -110,7 +104,6 @@ def _serialize_daily_totals(days: int = 7) -> Dict[str, Any]:
             }
         )
     return {"items": series}
-
 
 def _serialize_monthly_totals(months: int = 6) -> Dict[str, Any]:
     df = get_monthly_totals_by_month(months)
@@ -140,7 +133,6 @@ def _serialize_monthly_totals(months: int = 6) -> Dict[str, Any]:
         )
     return {"items": series}
 
-
 def _build_chart_series(days: int = 7, months: int = 6) -> Dict[str, Any]:
     """Compile chart-friendly aggregates for API consumers."""
     return {
@@ -149,14 +141,12 @@ def _build_chart_series(days: int = 7, months: int = 6) -> Dict[str, Any]:
         "monthly_totals": _serialize_monthly_totals(months)["items"],
     }
 
-
 def _safe_limit(value: Any, default: int = 5, *, minimum: int = 1, maximum: int = 50) -> int:
     try:
         numeric = int(value)
     except (TypeError, ValueError):
         return default
     return max(minimum, min(numeric, maximum))
-
 
 def _build_dashboard_context():
     charts = generate_all_charts()
@@ -188,7 +178,6 @@ def _build_dashboard_context():
         "chart_series": _build_chart_series(),
     }
 
-
 @app.route("/")
 def index():
     response = _serve_react_asset()
@@ -200,7 +189,6 @@ def index():
             "message": "React build not found. Run `npm run build` inside the frontend/ directory.",
         }
     )
-
 
 @app.route("/app", defaults={"path": ""})
 @app.route("/app/<path:path>")
@@ -218,7 +206,6 @@ def serve_react_app(path: str):
         404,
     )
 
-
 @app.route("/api/summary")
 def api_summary():
     context = _build_dashboard_context()
@@ -230,12 +217,10 @@ def api_summary():
         budget_alerts=context["budget_alerts"],
     )
 
-
 @app.route("/api/recent")
 def api_recent():
     limit = _safe_limit(request.args.get("limit"), default=5)
     return jsonify(get_recent_expenses(limit))
-
 
 @app.route("/api/charts/category-breakdown")
 def api_chart_category_breakdown():
@@ -243,7 +228,6 @@ def api_chart_category_breakdown():
     # use timezone-aware UTC timestamp
     payload["generated_at"] = datetime.now(timezone.utc).isoformat()
     return jsonify(payload)
-
 
 @app.route("/api/charts/daily-totals")
 def api_chart_daily_totals():
@@ -258,7 +242,6 @@ def api_chart_daily_totals():
     payload["days"] = days
     return jsonify(payload)
 
-
 @app.route("/api/charts/monthly-totals")
 def api_chart_monthly_totals():
     try:
@@ -272,7 +255,6 @@ def api_chart_monthly_totals():
     payload["months"] = months
     return jsonify(payload)
 
-
 @app.route("/api/regenerate-charts", methods=["POST"])
 def api_regenerate_charts():
     try:
@@ -283,7 +265,6 @@ def api_regenerate_charts():
     except Exception as exc:
         log_error("Failed to regenerate charts: %s", exc)
         return jsonify({"status": "error"}), 500
-
 
 @app.route("/api/add", methods=["POST"])
 def api_add():
@@ -313,21 +294,17 @@ def api_add():
         log_error("Add expense API failed: %s", exc)
         return jsonify({"error": "Failed to add expense."}), 500
 
-
 def _refresh_dashboard() -> Dict[str, Any]:
     """Return a fresh snapshot of dashboard data for the frontend."""
     return _build_dashboard_context()
 
-
 def _serialize_budget_status(statuses):
     return [asdict(status) for status in statuses]
-
 
 def _humanize_category_name(category: str) -> str:
     if not category:
         return "General"
     return str(category).replace("_", " ").title()
-
 
 def _format_budget_status_line(status: BudgetStatus, limit_info: Optional[BudgetLimit]) -> str:
     name = _humanize_category_name(status.category)
@@ -341,13 +318,11 @@ def _format_budget_status_line(status: BudgetStatus, limit_info: Optional[Budget
         detail += f" Alerts at {int(round(limit_info.warn_ratio * 100))}%"
     return f"{summary} {detail}.".replace("..", ".")
 
-
 def _collect_budget_lines(statuses: List[BudgetStatus], limits: Dict[str, BudgetLimit]) -> List[str]:
     return [
         _format_budget_status_line(status, limits.get(status.category))
         for status in statuses
     ]
-
 
 def _find_budget_status(category: str, statuses: List[BudgetStatus]) -> Optional[BudgetStatus]:
     category_key = category.lower()
@@ -355,7 +330,6 @@ def _find_budget_status(category: str, statuses: List[BudgetStatus]) -> Optional
         if status.category == category_key:
             return status
     return None
-
 
 def _summarize_chart_series(series: Dict[str, Any]) -> str:
     lines: List[str] = []
@@ -422,9 +396,6 @@ def api_voice_command():
     if not command_text:
         return jsonify({"error": "Command text required."}), 400
 
-    # Import voice parsing lazily so the app can start in environments without
-    # audio/Tk backends. The parsing function itself is pure text-processing
-    # and does not require audio devices.
     try:
         global parse_expense  # type: ignore
         if parse_expense is None:
@@ -451,8 +422,16 @@ def api_voice_command():
         return jsonify(response)
 
     if action == "repeat":
-        response["reply"] = "Repeat is not available in the web assistant."
-        return jsonify(response)
+        # If the client asks to repeat, re-run the previously performed
+        # command (if any). This keeps the web assistant stateless while
+        # allowing a simple repeat feature.
+        global last_performed_command
+        if not last_performed_command:
+            response["reply"] = "No previous command available to repeat."
+            return jsonify(response)
+        # overwrite parsed/action with the last performed command and continue
+        parsed = last_performed_command.copy()
+        action = parsed.get("action", "unknown")
 
     if action == "exit":
         response["reply"] = "The assistant stays ready. Say another command when you are ready."
@@ -475,6 +454,8 @@ def api_voice_command():
             response["expense_id"] = expense_id
             dashboard = _refresh_dashboard()
             response["dashboard"] = dashboard
+            # record this as the last performed command for repeat
+            last_performed_command = parsed.copy()
 
             alert_year = alert_month = None
             if parsed.get("date"):
@@ -505,12 +486,14 @@ def api_voice_command():
         response["reply"] = f"Deleted expense number {removed_id}."
         response["deleted_expense_id"] = removed_id
         response["dashboard"] = _refresh_dashboard()
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "balance":
         total_today = get_total_today()
         response["reply"] = f"Today's total spend is ₹{total_today:.2f}."
         response["total_today"] = total_today
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "recent":
@@ -518,11 +501,13 @@ def api_voice_command():
         recent_items = get_recent_expenses(limit)
         response["reply"] = "Here are the most recent expenses."
         response["recent_expenses"] = recent_items
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "weekly":
         summary_text = get_weekly_summary_text()
         response["reply"] = summary_text
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "monthly":
@@ -535,6 +520,7 @@ def api_voice_command():
             response["budget_statuses"] = _serialize_budget_status(statuses)
             response["budget_lines"] = lines
         response["reply"] = summary_text
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "show_budgets":
@@ -571,6 +557,8 @@ def api_voice_command():
                 response["budget_lines"] = lines
             else:
                 response["reply"] = "No budgets configured."
+            # record command when showing a specific category or full list
+            last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "set_budget":
@@ -630,6 +618,7 @@ def api_voice_command():
             }
         if warn_ratio is not None:
             response["warn_ratio"] = warn_ratio
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "remove_budget":
@@ -662,6 +651,7 @@ def api_voice_command():
             response["budget_statuses"] = _serialize_budget_status(statuses)
             response["budget_lines"] = lines
         response["removed_budget"] = category.lower()
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     if action == "chart_summary":
@@ -673,6 +663,9 @@ def api_voice_command():
             return jsonify(response), 500
         response["chart_series"] = series
         response["reply"] = _summarize_chart_series(series)
+        # include speak field so frontends can optionally play this text-to-speech
+        response["speak"] = response["reply"]
+        last_performed_command = parsed.copy()
         return jsonify(response)
 
     response["reply"] = "That command is not supported yet."

@@ -40,10 +40,8 @@ _DEFAULT_BUDGETS: Dict[str, Dict[str, Dict[str, float]]] = {
     "defaults": {"warn_at": DEFAULT_BUDGET_WARN_THRESHOLD},
 }
 
-
 def _get_budget_file_path(path: Optional[str]) -> str:
     return path or BUDGETS_FILE
-
 
 def _ensure_budget_file(path: Optional[str] = None) -> None:
     target = _get_budget_file_path(path)
@@ -56,7 +54,6 @@ def _ensure_budget_file(path: Optional[str] = None) -> None:
         log_info("Created default budget configuration at %s", target)
     except OSError as exc:
         log_error("Failed to create default budgets: %s", exc)
-
 
 def load_budget_config(path: Optional[str] = None) -> Dict[str, Dict[str, Dict[str, float]]]:
     target = _get_budget_file_path(path)
@@ -76,7 +73,6 @@ def load_budget_config(path: Optional[str] = None) -> Dict[str, Dict[str, Dict[s
     config["defaults"] = defaults
     return config
 
-
 def _to_budget_limits(config: Dict[str, Dict[str, Dict[str, float]]]) -> Dict[str, BudgetLimit]:
     defaults = config.get("defaults", {})
     default_warn_ratio = float(defaults.get("warn_at", DEFAULT_BUDGET_WARN_THRESHOLD))
@@ -90,11 +86,9 @@ def _to_budget_limits(config: Dict[str, Dict[str, Dict[str, float]]]) -> Dict[st
         budgets[category.lower()] = BudgetLimit(category=category.lower(), limit=limit, warn_ratio=warn_ratio)
     return budgets
 
-
 def get_budget_limits(path: Optional[str] = None) -> Dict[str, BudgetLimit]:
     config = load_budget_config(path)
     return _to_budget_limits(config)
-
 
 def set_budget_limit(category: str, limit: float, warn_at: Optional[float] = None, path: Optional[str] = None) -> None:
     """Create or update a monthly budget for a category and persist it.
@@ -146,7 +140,6 @@ def remove_budget_limit(category: str, path: Optional[str] = None) -> bool:
         log_error("Failed to persist budget removal: %s", exc)
         raise
 
-
 def format_budget_summary(year: Optional[int] = None, month: Optional[int] = None) -> str:
     """Return a human-friendly summary of current budgets and spend."""
     statuses = evaluate_monthly_budgets(year=year, month=month)
@@ -157,7 +150,6 @@ def format_budget_summary(year: Optional[int] = None, month: Optional[int] = Non
         pct = s.percentage * 100
         lines.append(f"{s.category}: ₹{s.spent:.0f} / ₹{s.limit:.0f} ({pct:.0f}%) — {s.level}")
     return "\n".join(lines)
-
 
 def _assess_single_budget(spent: float, limit: BudgetLimit) -> BudgetStatus:
     percentage = spent / limit.limit if limit.limit else 0.0
@@ -185,7 +177,6 @@ def _assess_single_budget(spent: float, limit: BudgetLimit) -> BudgetStatus:
         message=message,
     )
 
-
 def evaluate_monthly_budgets(year: Optional[int] = None, month: Optional[int] = None) -> List[BudgetStatus]:
     now = datetime.now()
     year = year or now.year
@@ -201,7 +192,6 @@ def evaluate_monthly_budgets(year: Optional[int] = None, month: Optional[int] = 
         results.append(_assess_single_budget(spent, limit))
     return results
 
-
 def get_alert_for_category(category: str, year: Optional[int] = None, month: Optional[int] = None) -> Optional[BudgetStatus]:
     category_key = category.lower()
     limits = get_budget_limits()
@@ -214,10 +204,8 @@ def get_alert_for_category(category: str, year: Optional[int] = None, month: Opt
             return status
     return None
 
-
 def summarize_alerts(statuses: List[BudgetStatus]) -> List[str]:
     return [status.message for status in statuses if status.level in {"warning", "critical"}]
-
 
 __all__ = [
     "BudgetLimit",

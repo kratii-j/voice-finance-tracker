@@ -3,9 +3,6 @@ import sqlite3
 from typing import Dict, List, Optional
 
 import matplotlib
-# Use a non-interactive backend to avoid importing TK/Tcl GUI toolkits on servers
-# which can cause runtime errors like "Can't find a usable tk.tcl" when matplotlib
-# tries to initialize a GUI backend. Agg is suitable for writing files (PNG).
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd

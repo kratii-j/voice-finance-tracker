@@ -1,7 +1,6 @@
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-
 from config import DATE_FORMAT
 from database import create_connection
 from logger import log_error

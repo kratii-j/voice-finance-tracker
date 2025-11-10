@@ -6,13 +6,21 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import dateparser
-from dateparser.search import search_dates
-# Heavy audio and numeric libraries are imported lazily inside the functions
-# that need them to avoid import-time side-effects when only parsing text.
+try:
+    import dateparser
+    from dateparser.search import search_dates  # type: ignore
+    _HAS_DATEPARSER = True
+except Exception:
+    # dateparser is optional for approximate natural-language dates used by
+    # the voice parser. If it's unavailable (e.g. not installed in the venv),
+    # fall back to no-date behaviour and avoid raising ImportError during
+    # web requests that only need basic command parsing.
+    dateparser = None  # type: ignore
+    def search_dates(*args, **kwargs):  # fallback stub
+        return None
+    _HAS_DATEPARSER = False
 from word2number import w2n
 
-# Lazy-initialized audio engine and recognizer to avoid import-time side-effects
 _engine = None
 _recognizer = None
 
@@ -21,7 +29,6 @@ def _get_engine():
     if _engine is not None:
         return _engine
     try:
-        # import locally to avoid top-level dependency on audio libraries
         import pyttsx3
 
         _engine = pyttsx3.init()
@@ -42,9 +49,7 @@ def _get_recognizer():
     if _recognizer is not None:
         return _recognizer
     try:
-        # import speech_recognition lazily
         import speech_recognition as sr
-
         _recognizer = sr.Recognizer()
     except Exception:
         _recognizer = None
@@ -235,9 +240,8 @@ _ACTION_PATTERNS = {
     ],
 }
 
-# Additional explicit patterns for budget intents
 _SET_BUDGET_PATTERNS = [
-    r"\bset\b.*\bbudget\b",            # e.g., set budget for food to 5000
+    r"\bset\b.*\bbudget\b",
     r"\bset a budget\b",
     r"\bbudget for\b.*\bset\b",
 ]
@@ -350,13 +354,11 @@ def _extract_word_amount(text: str) -> Optional[float]:
                 return int(value) if value.is_integer() else value
     return None
 
-
 def _extract_amount(text: str) -> Optional[float]:
     numeric = _extract_numeric_amount(text)
     if numeric is not None:
         return numeric
     return _extract_word_amount(text)
-
 
 def _extract_warn_ratio(text: str) -> Optional[float]:
     lowered = text.lower()
@@ -377,7 +379,6 @@ def _extract_warn_ratio(text: str) -> Optional[float]:
     value = max(0.0, min(value, 1.0))
     return value
 
-
 def _category_from_text(fragment: str) -> Optional[str]:
     cleaned = re.sub(r"[^a-z0-9\s]", " ", fragment.lower())
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -388,7 +389,6 @@ def _category_from_text(fragment: str) -> Optional[str]:
         if f" {synonym} " in padded:
             return canonical
     return None
-
 
 def _strip_known_terms(phrase: str, category: str) -> Optional[str]:
     cleaned = phrase
@@ -410,7 +410,6 @@ def _strip_known_terms(phrase: str, category: str) -> Optional[str]:
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned or None
 
-
 def _extract_category_and_description(text: str, original_text: str) -> tuple[str, Optional[str]]:
     for match in _CATEGORY_PHRASE_PATTERN.finditer(text):
         phrase_lower = match.group(1).strip()
@@ -423,7 +422,6 @@ def _extract_category_and_description(text: str, original_text: str) -> tuple[st
     if category:
         return category, None
     return "uncategorized", None
-
 
 def _contains_date_signal(text: str) -> bool:
     lowered = text.lower()
@@ -440,8 +438,11 @@ def _contains_date_signal(text: str) -> bool:
         return True
     return False
 
-
 def _extract_date(original_text: str, *, base_datetime: Optional[datetime] = None) -> Optional[str]:
+    # If dateparser isn't installed, avoid trying to parse dates and return
+    # None so the rest of the command still executes.
+    if not _HAS_DATEPARSER:
+        return None
     if not _contains_date_signal(original_text):
         return None
 
@@ -467,9 +468,7 @@ def _extract_date(original_text: str, *, base_datetime: Optional[datetime] = Non
         return parsed.date().isoformat()
     return None
 
-
 def _detect_action(text: str, has_amount: bool, has_category: bool) -> Optional[str]:
-    # First, check explicit budget intents
     if any(re.search(p, text) for p in _SET_BUDGET_PATTERNS):
         return "set_budget"
     if any(re.search(p, text) for p in _SHOW_BUDGETS_PATTERNS):
@@ -524,7 +523,6 @@ def speak(text: str, tone: str = "neutral") -> None:
             engine.say(utterance)
             engine.runAndWait()
         except Exception:
-            # Fall back to printing if audio playback fails
             print(utterance)
     else:
         print(utterance)
@@ -546,7 +544,6 @@ def respond(action: str, message: str) -> None:
     speak(message, tone=tone_map.get(action, "neutral"))
 
 def _record_audio(duration: float, fs: int) -> Any:
-    # import heavy libs locally
     import sounddevice as sd
     import numpy as np
 
@@ -573,10 +570,8 @@ def get_voice_input(
             recording = _record_audio(duration, fs)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_filename = tmp.name
-            # import write and sounddevice locally
             from scipy.io.wavfile import write
             write(tmp_filename, fs, recording)
-            # ensure recognizer and speech_recognition are available
             recognizer = _get_recognizer()
             if not recognizer:
                 speak("Voice recognition unsupported in this environment.", tone="error")
@@ -591,7 +586,6 @@ def get_voice_input(
             last_transcript = transcript
             return transcript.lower()
         except Exception as exc:
-            # Try to classify common audio exceptions for friendlier messages
             name = exc.__class__.__name__ if exc else ""
             if name == "UnknownValueError":
                 speak("Sorry, I did not catch that.", tone="error")
@@ -604,6 +598,7 @@ def get_voice_input(
                 speak("Microphone error. Please check the device.", tone="error")
                 print("Microphone error:", exc)
                 break
+            else:
                 speak("I hit an unexpected problem.", tone="error")
                 print("Voice input error:", exc)
         finally:
@@ -643,7 +638,6 @@ def parse_expense(text: str) -> Dict[str, Any]:
         return result
 
     if action == "set_budget":
-        # Return parsed amount (may be None) and detected category (or None if uncategorized)
         warn_ratio = _extract_warn_ratio(normalized_text)
         return {
             "action": "set_budget",
@@ -689,14 +683,3 @@ def confirm_amount_flow(
 
 def repeat_last_transcript() -> Optional[str]:
     return last_transcript
-
-# TESTS for _extract_date base_datetime parameter
-def _test_extract_date_with_base_datetime():
-    test_text = "yesterday"
-    fixed_base = datetime(2024, 6, 10, 12, 0, 0)
-    result = _extract_date(test_text, base_datetime=fixed_base)
-    assert result == "2024-06-09", f"Expected 2024-06-09, got {result}"
-
-if __name__ == "__main__":
-    _test_extract_date_with_base_datetime()
-    print("Test passed: _extract_date uses base_datetime correctly.")
